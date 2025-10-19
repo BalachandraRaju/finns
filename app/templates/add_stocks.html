@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Stocks to Watchlist</title>
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        .select2-container--default .select2-selection--multiple {
+            background-color: #444;
+            border: 1px solid #666;
+            color: white;
+        }
+        .select2-container--default .select2-selection--multiple .select2-selection__choice {
+            background-color: #555;
+            border: 1px solid #777;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>Add Stocks to Watchlist</h1>
+        <div class="controls">
+            <a href="/" class="button">Back to Watchlist</a>
+        </div>
+    </header>
+
+    <div class="container">
+        <div style="background: #e7f3ff; padding: 15px; border-radius: 6px; margin-bottom: 20px; border-left: 4px solid #007bff;">
+            <h4 style="margin: 0 0 10px 0; color: #0056b3;">📊 Data Population Info</h4>
+            <p style="margin: 0; color: #0056b3;">
+                When you add stocks, they will be immediately added to your watchlist.
+                Historical data (2 months of 1-minute candles) will be fetched in the background for efficient chart loading.
+                You can check the progress on the <a href="/data-status" style="color: #0056b3; font-weight: bold;">Data Status</a> page.
+            </p>
+        </div>
+
+        <form hx-post="/api/watchlist/add" hx-on::after-request="if(event.detail.successful) window.location.href='/'">
+            
+            <label for="instrument_key">Select Stocks:</label>
+            <select name="instrument_key" id="instrument_key" style="width: 100%;" required multiple="multiple">
+                {% for stock in stocks_list %}
+                    <option value="{{ stock.instrument_key }}">{{ stock.symbol }} - {{ stock.name }}</option>
+                {% endfor %}
+            </select>
+            <br/><br/>
+
+            <label for="trade_type">Trade Type:</label>
+            <select name="trade_type" id="trade_type" style="width: 100%;" required>
+                <option value="Bullish">Bullish</option>
+                <option value="Bearish">Bearish</option>
+            </select>
+            <br/><br/>
+
+            <label for="target_price">Target Price:</label>
+            <input type="number" step="any" id="target_price" name="target_price" style="width: 100%;">
+            <br/><br/>
+
+            <label for="stoploss">Stoploss Price:</label>
+            <input type="number" step="any" id="stoploss" name="stoploss" style="width: 100%;">
+            <br/><br/>
+
+            <label for="tags">Tags (comma-separated):</label>
+            <input type="text" id="tags" name="tags" style="width: 100%;" placeholder="e.g. Watchlist, Swing Trade" required>
+            <br/><br/>
+
+            <button type="submit">Add Selected Stocks</button>
+        </form>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            $('#instrument_key').select2({
+                placeholder: "Search and select stocks",
+                allowClear: true
+            });
+        });
+    </script>
+</body>
+</html> 

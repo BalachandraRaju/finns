@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PKScreener Backtest</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    body { padding: 20px; }
+    .card + .card { margin-top: 16px; }
+    .success { color: #198754; }
+    .fail { color: #dc3545; }
+    .small-muted { font-size: 12px; color: #6c757d; }
+    .result-table th, .result-table td { white-space: nowrap; }
+    .spinner { display: none; }
+    .badge-scanner { background: #0d6efd; }
+  </style>
+</head>
+<body>
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>PKScreener Backtest</h2>
+    <div>
+      <a href="/" class="btn btn-outline-secondary">← Back</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <form id="backtest-form" class="row gy-3">
+        <div class="col-12 col-md-6">
+          <label class="form-label">Select Stocks (watchlist)</label>
+          <select id="stocks" class="form-select" multiple size="10">
+            {% for s in watchlist %}
+              <option value="{{ s.instrument_key }}">{{ s.symbol }} - {{ s.company_name }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text">Tip: Hold Cmd/Ctrl to select multiple. Leave empty to use all watchlist stocks.</div>
+        </div>
+
+        <div class="col-12 col-md-6">
+          <div class="row g-3">
+            <div class="col-6">
+              <label class="form-label">Start Date</label>
+              <input id="start-date" class="form-control" type="date" />
+            </div>
+            <div class="col-6">
+              <label class="form-label">End Date</label>
+              <input id="end-date" class="form-control" type="date" />
+            </div>
+            <div class="col-12 mt-2">
+              <label class="form-label">Timeframe (minutes)</label>
+              <select id="timeframe" class="form-select" style="max-width: 200px;">
+                <option value="1" selected>1 minute (fast, noisier)</option>
+                <option value="3">3 minutes</option>
+                <option value="5">5 minutes (cleaner, fewer alerts)</option>
+                <option value="1440">Daily (MongoDB)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <label class="form-label">Scanners <small class="text-muted">(Select one or more)</small></label>
+            <div class="row">
+              <div class="col-md-6">
+                <div class="mb-2"><strong>Original Scanners</strong></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" value="1" id="sc-1" checked /><label class="form-check-label" for="sc-1">#1 Probable Breakout</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" value="12" id="sc-12" /><label class="form-check-label" for="sc-12">#12 Vol+Mom+Breakout+RSI</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" value="14" id="sc-14" /><label class="form-check-label" for="sc-14">#14 VCP+Patterns+MA</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" value="21" id="sc-21" /><label class="form-check-label" for="sc-21">#21 BullCross MA+Fair Value</label></div>
+              </div>
+              <div class="col-md-6">
+                <div class="mb-2"><strong>PKScreener Breakout Scanners</strong></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" value="17" id="sc-17" /><label class="form-check-label" for="sc-17">#17 52-Week High Breakout</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" value="20" id="sc-20" /><label class="form-check-label" for="sc-20">#20 Bullish for Tomorrow</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" value="23" id="sc-23" /><label class="form-check-label" for="sc-23">#23 Breaking Out Now</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" value="32" id="sc-32" /><label class="form-check-label" for="sc-32">#32 Intraday Breakout Setup</label></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4 d-flex align-items-center gap-2">
+            <button type="submit" class="btn btn-primary" id="run-btn">Run Backtest</button>
+            <div class="spinner-border text-primary spinner" id="loading" role="status" style="width:1.5rem;height:1.5rem;"><span class="visually-hidden">Loading...</span></div>
+            <div id="status" class="small-muted"></div>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="results" class="mt-3"></div>
+
+  <script>
+    function getSelected(options) {
+      return Array.from(options).filter(o => o.selected).map(o => o.value)
+    }
+    function todayISO(d = new Date()) { return d.toISOString().slice(0,10) }
+    function daysAgo(n) { const d = new Date(); d.setDate(d.getDate()-n); return todayISO(d) }
+
+    // Defaults: last 7 days
+    document.getElementById('start-date').value = daysAgo(7)
+    document.getElementById('end-date').value = todayISO()
+
+    document.getElementById('backtest-form').addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const runBtn = document.getElementById('run-btn')
+      const loading = document.getElementById('loading')
+      const status = document.getElementById('status')
+      const resultsEl = document.getElementById('results')
+
+      runBtn.disabled = true
+      loading.style.display = 'inline-block'
+      status.textContent = 'Running backtest... This may take a minute.'
+      resultsEl.innerHTML = ''
+
+      const instrument_keys = getSelected(document.getElementById('stocks').options)
+      const start_date = document.getElementById('start-date').value
+      const end_date = document.getElementById('end-date').value
+      // Only check scanners that exist in the UI
+      const scanner_ids = [1, 12, 14, 17, 20, 21, 23, 32].filter(id => {
+        const el = document.getElementById('sc-'+id)
+        return el && el.checked
+      })
+
+      try {
+        const timeframe = parseInt(document.getElementById('timeframe').value, 10) || 1
+        const resp = await fetch('/api/pkscreener/backtest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ instrument_keys, start_date, end_date, scanner_ids, timeframe })
+        })
+        const data = await resp.json()
+
+        if (!resp.ok || data.status !== 'success') {
+          throw new Error(data.message || 'Request failed')
+        }
+
+        status.textContent = 'Complete.'
+        renderResults(resultsEl, data)
+      } catch (err) {
+        status.textContent = ''
+        resultsEl.innerHTML = `<div class="alert alert-danger">❌ ${err.message || err}</div>`
+      } finally {
+        runBtn.disabled = false
+        loading.style.display = 'none'
+      }
+    })
+
+    function renderResults(container, data) {
+      const scannerMap = {
+        '1': '#1 Probable Breakout',
+        '12': '#12 Vol+Mom+Breakout+RSI',
+        '14': '#14 VCP+Patterns+MA',
+        '17': '#17 52-Week High Breakout',
+        '20': '#20 Bullish for Tomorrow',
+        '21': '#21 BullCross MA+Fair Value',
+        '23': '#23 Breaking Out Now',
+        '32': '#32 Intraday Breakout Setup'
+      }
+
+      const isDaily = (data.timeframe_mode === 'daily') || (Number(data.timeframe) === 1440)
+
+      const sections = []
+      for (const sid of Object.keys(data.summary)) {
+        const sum = data.summary[sid]
+        const items = data.results[sid] || []
+        const avg = isDaily ? (sum.avg_returns_day || {}) : (sum.avg_returns || {})
+        const header = `
+          <div class="card">
+            <div class="card-body">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h5 class="mb-0">Scanner <span class="badge badge-scanner">${scannerMap[sid] || ('#'+sid)}</span></h5>
+                <div class="small-muted">
+                  Total: <strong>${sum.total_triggers}</strong>
+                  · Success Rate: <strong>${sum.success_rate_pct}%</strong>
+                  ${isDaily
+                    ? `· Avg 1d: <strong>${fmtPct(avg['1d'])}</strong> · 3d: <strong>${fmtPct(avg['3d'])}</strong> · 5d: <strong>${fmtPct(avg['5d'])}</strong> · 10d: <strong>${fmtPct(avg['10d'])}</strong>`
+                    : `· Avg 3m: <strong>${fmtPct(avg['3min'])}</strong> · 5m: <strong>${fmtPct(avg['5min'])}</strong> · 15m: <strong>${fmtPct(avg['15min'])}</strong> · 30m: <strong>${fmtPct(avg['30min'])}</strong>`}
+                </div>
+              </div>
+              ${renderTable(items, isDaily)}
+            </div>
+          </div>`
+        sections.push(header)
+      }
+      container.innerHTML = sections.join('') || '<div class="alert alert-info">No results.</div>'
+    }
+
+    function renderTable(items, isDaily = false) {
+      if (!items.length) return '<div class="small-muted">No triggers found.</div>'
+      const rows = items.map(r => {
+        const dt = (r.backtest_date || '').split('T')[0]
+        const tt = r.trigger_time ? r.trigger_time.split('T')[1]?.slice(0,5) : ''
+        const ok = r.was_successful ? '✅' : '❌'
+        if (isDaily) {
+          return `<tr>
+            <td>${r.symbol}</td>
+            <td>${dt}</td>
+            <td></td>
+            <td>₹${fmtNum(r.trigger_price)}</td>
+            <td class="${posNeg(r.return_1day_pct)}">${fmtPct(r.return_1day_pct)}</td>
+            <td class="${posNeg(r.return_3day_pct)}">${fmtPct(r.return_3day_pct)}</td>
+            <td class="${posNeg(r.return_5day_pct)}">${fmtPct(r.return_5day_pct)}</td>
+            <td class="${posNeg(r.return_10day_pct)}">${fmtPct(r.return_10day_pct)}</td>
+            <td>${ok}</td>
+          </tr>`
+        }
+        return `<tr>
+          <td>${r.symbol}</td>
+          <td>${dt}</td>
+          <td>${tt}</td>
+          <td>₹${fmtNum(r.trigger_price)}</td>
+          <td class="${posNeg(r.return_3min_pct)}">${fmtPct(r.return_3min_pct)}</td>
+          <td class="${posNeg(r.return_5min_pct)}">${fmtPct(r.return_5min_pct)}</td>
+          <td class="${posNeg(r.return_15min_pct)}">${fmtPct(r.return_15min_pct)}</td>
+          <td class="${posNeg(r.return_30min_pct)}">${fmtPct(r.return_30min_pct)}</td>
+          <td>${ok}</td>
+        </tr>`
+      }).join('')
+
+      const head = isDaily ? `
+        <tr>
+          <th>Symbol</th>
+          <th>Date</th>
+          <th>Time</th>
+          <th>Price</th>
+          <th>1d</th>
+          <th>3d</th>
+          <th>5d</th>
+          <th>10d</th>
+          <th>✔</th>
+        </tr>` : `
+        <tr>
+          <th>Symbol</th>
+          <th>Date</th>
+          <th>Time</th>
+          <th>Price</th>
+          <th>3m</th>
+          <th>5m</th>
+          <th>15m</th>
+          <th>30m</th>
+          <th>✔</th>
+        </tr>`
+
+      return `<div class="table-responsive">
+        <table class="table table-sm table-striped result-table">
+          <thead>${head}</thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`
+    }
+
+    function fmtPct(v) { return (v === null || v === undefined) ? '-' : `${Number(v).toFixed(2)}%` }
+    function fmtNum(v) { return (v === null || v === undefined) ? '-' : Number(v).toFixed(2) }
+    function posNeg(v) { if (v === null || v === undefined) return ''; return Number(v) >= 0 ? 'success' : 'fail' }
+  </script>
+</body>
+</html>
+

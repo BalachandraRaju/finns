@@ -1,0 +1,512 @@
+/* --- General --- */
+:root {
+    --primary-color: #ffffff;      /* White background */
+    --secondary-color: #f4f7f6;     /* Light grey for cards/tables */
+    --text-color: #1a1a1a;          /* Dark grey text */
+    --accent-color: #007bff;        /* Standard blue for links and accents */
+    --accent-hover-color: #0056b3;  /* Darker blue for hover */
+    --border-color: #dee2e6;         /* Light grey border */
+    --success-color: #28a745;
+    --error-color: #dc3545;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: var(--primary-color);
+    color: var(--text-color);
+    margin: 0;
+    line-height: 1.6;
+}
+
+h1, h2 {
+    text-align: center;
+    font-weight: 300;
+    color: #fff;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 10px;
+    margin-top: 2rem;
+}
+
+.container {
+    width: 90%;
+    max-width: 1200px;
+    margin: auto;
+    padding: 20px;
+}
+
+/* --- Header & Controls --- */
+.header {
+    background-color: var(--secondary-color);
+    padding: 15px 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 1.8em;
+    color: var(--text-color);
+}
+
+.controls {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+#time-range-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background-color: #e7f3ff;
+    border-radius: 6px;
+    border: 1px solid #b3d9ff;
+}
+
+#time-range-selector label {
+    font-weight: 500;
+    color: #0056b3;
+    margin: 0;
+}
+
+#time-range {
+    background-color: white;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 0.9em;
+    color: #333;
+}
+
+#stock-selector {
+    background-color: white;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 1em;
+    color: #333;
+    font-weight: 500;
+    min-width: 120px;
+}
+
+#stock-selector:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+/* Add visual separator after stock selector */
+.chart-controls #stock-selector {
+    margin-right: 20px;
+    padding-right: 20px;
+    border-right: 1px solid #ddd;
+}
+
+/* Test Chart Page Styles */
+.pattern-info-panel {
+    background-color: var(--secondary-color);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    border: 1px solid var(--border-color);
+}
+
+.pattern-card {
+    background-color: white;
+    border-radius: 6px;
+    padding: 15px;
+    border-left: 4px solid var(--accent-color);
+}
+
+.signal-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 0.9em;
+}
+
+.signal-buy {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.signal-sell {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.analysis-panel {
+    background-color: var(--secondary-color);
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 20px;
+    border: 1px solid var(--border-color);
+}
+
+.analysis-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 15px;
+}
+
+.analysis-item {
+    background-color: white;
+    border-radius: 6px;
+    padding: 15px;
+}
+
+.analysis-item h4 {
+    margin-top: 0;
+    color: var(--accent-color);
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 8px;
+}
+
+.analysis-item ul {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+.analysis-item li {
+    margin-bottom: 8px;
+    line-height: 1.4;
+}
+
+#validation-checklist label {
+    display: block;
+    margin-bottom: 8px;
+    cursor: pointer;
+}
+
+#validation-checklist input[type="checkbox"] {
+    margin-right: 8px;
+}
+
+/* Alert Trigger Analysis Styles */
+.trigger-analysis-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 15px;
+}
+
+.trigger-type {
+    margin-bottom: 15px;
+    padding: 10px;
+    border-radius: 6px;
+    background-color: #f8f9fa;
+}
+
+.trigger-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 0.9em;
+    margin-bottom: 8px;
+}
+
+.trigger-badge.buy {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.trigger-badge.sell {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.trigger-type ul {
+    margin: 8px 0 0 0;
+    padding-left: 20px;
+}
+
+.trigger-type li {
+    margin-bottom: 4px;
+    font-size: 0.9em;
+}
+
+#trigger-points {
+    background-color: #f8f9fa;
+    border-radius: 6px;
+    padding: 15px;
+    border-left: 4px solid #ffc107;
+}
+
+#trigger-points p {
+    margin: 0;
+    color: #6c757d;
+    font-style: italic;
+}
+
+.trigger-expectation {
+    background-color: white;
+    border-radius: 4px;
+    padding: 10px;
+    margin: 10px 0;
+    border-left: 3px solid #007bff;
+}
+
+.trigger-expectation p {
+    margin: 5px 0;
+    color: #333 !important;
+    font-style: normal !important;
+}
+
+.trigger-legend {
+    background-color: #e9ecef;
+    border-radius: 4px;
+    padding: 8px;
+    margin-top: 10px;
+    font-size: 0.9em;
+}
+
+.trigger-legend p {
+    margin: 3px 0;
+    color: #495057 !important;
+    font-style: normal !important;
+}
+
+#trigger-points h5 {
+    margin: 0 0 10px 0;
+    color: #007bff;
+    font-size: 1.1em;
+}
+
+.alert-logic {
+    margin-bottom: 15px;
+    padding: 10px;
+    border-radius: 6px;
+    background-color: #f8f9fa;
+}
+
+.alert-logic h5 {
+    margin: 0 0 8px 0;
+    color: #007bff;
+    font-size: 1em;
+}
+
+.alert-logic ul {
+    margin: 8px 0 0 0;
+    padding-left: 20px;
+}
+
+.alert-logic li {
+    margin-bottom: 4px;
+    font-size: 0.9em;
+}
+
+.trigger-expectation p strong {
+    color: #007bff;
+}
+
+#last-updated {
+    font-size: 0.9em;
+    color: #555;
+}
+
+/* --- Buttons --- */
+.button, button {
+    background-color: var(--accent-color);
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 5px;
+    cursor: pointer;
+    text-decoration: none;
+    font-size: 1em;
+    transition: background-color 0.2s;
+}
+
+.button:hover, button:hover {
+    background-color: var(--accent-hover-color);
+}
+
+button:disabled {
+    background-color: #a0a0a0;
+    cursor: not-allowed;
+}
+
+button.delete-btn {
+    background-color: var(--error-color);
+}
+button.delete-btn:hover {
+    background-color: #c82333;
+}
+
+a.button {
+    display: inline-block;
+}
+
+/* --- Tables --- */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+    background-color: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    border: 1px solid var(--border-color);
+}
+
+th, td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    color: #495057;
+}
+
+tr:last-child td {
+    border-bottom: none;
+}
+
+tr:hover {
+    background-color: #f1f8ff;
+}
+
+.group-header td {
+    font-weight: bold;
+    background-color: #e9ecef;
+    border-top: 1px solid #ced4da;
+    border-bottom: 1px solid #ced4da;
+    color: #495057;
+}
+
+td a {
+    color: var(--accent-color);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+td a:hover {
+    text-decoration: underline;
+}
+
+/* --- Form Styles --- */
+.form-container {
+    background-color: var(--secondary-color);
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    max-width: 600px;
+    margin: 40px auto;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    font-size: 1em;
+    box-sizing: border-box; /* Important for width calculation */
+}
+
+/* Info Banner on Chart Page */
+.info-banner {
+    background-color: #e9ecef;
+    color: #495057;
+    padding: 10px 15px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    text-align: center;
+    font-size: 0.9em;
+    border: 1px solid #ced4da;
+}
+
+/* --- Modal --- */
+.modal {
+    display: none; 
+    position: fixed; 
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.7);
+}
+
+.modal-content {
+    background-color: var(--primary-color);
+    margin: 10% auto;
+    padding: 30px;
+    border: 1px solid var(--border-color);
+    width: 90%;
+    max-width: 500px;
+    border-radius: 8px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+}
+
+.modal-header h2 {
+    margin: 0;
+    border: none;
+    padding: 0;
+}
+
+.close-button {
+    color: #aaa;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: color 0.3s ease;
+}
+
+.close-button:hover {
+    color: #fff;
+}
+
+#add-stock-form div {
+    margin-bottom: 15px;
+}
+
+label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 0.9rem;
+    color: #ccc;
+}
+
+input[type="text"], input[type="number"], select {
+    width: 100%;
+    padding: 10px;
+    border-radius: 5px;
+    border: 1px solid var(--border-color);
+    background-color: #333;
+    color: var(--font-color);
+    box-sizing: border-box; /* Important */
+}

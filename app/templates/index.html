@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Watchlist</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC" crossorigin="anonymous"></script>
+</head>
+<body>
+    <header class="header">
+        <h1>My Stock Watchlist</h1>
+        <div class="controls">
+            <a href="/add-stocks" class="button">Add Stock</a>
+            <a href="/test-charts" class="button" style="background: #28a745;">Test Patterns</a>
+            <a href="/pnf-matrix" class="button" style="background: #FFD700; color: #000;">🎯 PnF Matrix</a>
+            <a href="/alerts" class="button" style="background: #dc3545;">🚨 Alerts</a>
+            <a href="/settings" class="button" style="background: #667eea;">⚙️ Settings</a>
+            <a href="/data-status" class="button" style="background: #6c757d;">Data Status</a>
+            {% if user %}
+            <span style="color: #fff; margin-left: 20px;">👤 {{ user.full_name }}</span>
+            <a href="/logout" class="button" style="background: #dc3545; margin-left: 10px;">Logout</a>
+            {% endif %}
+        </div>
+    </header>
+
+    <div class="container">
+        <div>
+            <table class="watchlist-table">
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Company</th>
+                        <th>Trade Type</th>
+                        <th>Target</th>
+                        <th>Stoploss</th>
+                        <th>Tags</th>
+                        <th>Latest Alert</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for stock in watchlist %}
+                    <tr>
+                        <td>
+                            <a href="/chart/{{ stock.instrument_key }}" target="_blank">
+                                {{ stock.symbol }}
+                            </a>
+                        </td>
+                        <td>{{ stock.company_name }}</td>
+                        <td>{{ stock.trade_type }}</td>
+                        <td>{{ "%.2f"|format(stock.target_price) if stock.target_price else '-' }}</td>
+                        <td>{{ "%.2f"|format(stock.stoploss) if stock.stoploss else '-' }}</td>
+                        <td>
+                            {% for tag in stock.tags.split(',') %}
+                            <span class="tag">{{ tag.strip() }}</span>
+                            {% endfor %}
+                        </td>
+                        <td>
+                            {% if stock.latest_alert %}
+                                <div class="alert-info">
+                                    <span class="alert-type">{{ stock.latest_alert.type }}</span>
+                                    <span class="alert-price">@ {{ "%.2f"|format(stock.latest_alert.signal_price) }}</span>
+                                    <span class="alert-time">{{ stock.latest_alert.timestamp.split('T')[1].split('.')[0] }}</span>
+                                </div>
+                            {% else %}
+                                <span class="no-alert">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button class="btn-delete" hx-delete="/watchlist/delete/{{ stock.instrument_key }}" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete {{ stock.symbol }}?">
+                                Delete
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

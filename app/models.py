@@ -1,0 +1,103 @@
+"""
+Pydantic models for API requests/responses.
+All data is stored in MongoDB - no SQLAlchemy models needed.
+"""
+from pydantic import BaseModel, Field
+from typing import List, Optional
+from datetime import datetime
+
+# --- Pydantic Models (for API requests/responses) ---
+class AddStockRequest(BaseModel):
+    """Request model for adding a new stock to the watchlist."""
+    instrument_key: str
+    symbol: str
+    target_price: Optional[float] = None
+    stoploss: Optional[float] = None
+    trade_type: str  # e.g., "Bullish" or "Bearish"
+    tags: str        # Comma-separated string of tags
+
+class WatchlistStock(BaseModel):
+    """Represents a single stock in the watchlist with all its details."""
+    instrument_key: str
+    symbol: str
+    company_name: Optional[str] = None
+    target_price: Optional[float] = None
+    stoploss: Optional[float] = None
+    trade_type: str
+    tags: str
+    added_at: datetime
+    ltp: Optional[float] = None  # To be populated with the live Last Traded Price
+    latest_alert: Optional[dict] = None
+
+class Settings(BaseModel):
+    rsi_threshold: int
+    telegram_alerts_enabled: bool
+
+    # Alert type preferences
+    enable_pattern_alerts: Optional[bool] = True
+    enable_rsi_alerts: Optional[bool] = False
+    enable_super_alerts_only: Optional[bool] = False
+
+    # Pattern-specific preferences
+    enable_double_top_bottom: Optional[bool] = True
+    enable_triple_top_bottom: Optional[bool] = True
+    enable_quadruple_top_bottom: Optional[bool] = True
+    enable_pole_patterns: Optional[bool] = True
+    enable_catapult_patterns: Optional[bool] = True
+
+    # API Configuration (optional)
+    dhan_access_token: Optional[str] = None
+
+# --- Alert Pydantic Models ---
+class AlertResponse(BaseModel):
+    """Response model for alert data."""
+    id: Optional[int] = None  # Made optional for MongoDB compatibility
+    symbol: str
+    instrument_key: Optional[str] = None
+    alert_type: str  # 'BUY', 'SELL'
+    pattern_type: str
+    pattern_name: str
+    signal_price: float
+    trigger_reason: str
+    is_super_alert: bool
+    pnf_matrix_score: Optional[int] = None
+    fibonacci_level: Optional[str] = None
+    column_number: Optional[int] = None
+    timestamp: datetime
+
+    # Analysis fields
+    accuracy_checked: bool = False  # Default value for MongoDB compatibility
+    outcome: Optional[str] = None
+    outcome_price: Optional[float] = None
+    outcome_date: Optional[datetime] = None
+    profit_loss_percent: Optional[float] = None
+    days_to_outcome: Optional[int] = None
+
+    # Additional metadata
+    market_conditions: Optional[str] = None
+    volume_at_alert: Optional[int] = None
+    notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class AlertFilters(BaseModel):
+    """Model for alert filtering parameters."""
+    symbol: Optional[str] = None
+    alert_type: Optional[str] = None  # 'BUY', 'SELL', 'ALL'
+    pattern_type: Optional[str] = None
+    is_super_alert: Optional[bool] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    outcome: Optional[str] = None  # 'profit', 'loss', 'pending', 'all'
+    limit: Optional[int] = 100
+    offset: Optional[int] = 0
+
+class AlertAnalysisUpdate(BaseModel):
+    """Model for updating alert analysis data."""
+    alert_id: int
+    outcome: str  # 'profit', 'loss', 'pending'
+    outcome_price: Optional[float] = None
+    outcome_date: Optional[datetime] = None
+    profit_loss_percent: Optional[float] = None
+    notes: Optional[str] = None

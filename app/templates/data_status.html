@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Population Status - Finns</title>
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        .status-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .status-summary {
+            background: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .status-card {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+            border-left: 4px solid #ddd;
+        }
+        
+        .status-card.queued { border-left-color: #ffa500; }
+        .status-card.in_progress { border-left-color: #007bff; }
+        .status-card.completed { border-left-color: #28a745; }
+        .status-card.failed { border-left-color: #dc3545; }
+        
+        .status-number {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .status-label {
+            color: #666;
+            text-transform: uppercase;
+            font-size: 0.9em;
+        }
+        
+        .tasks-table {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .tasks-table table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .tasks-table th,
+        .tasks-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .tasks-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+        
+        .status-badge.queued { background: #fff3cd; color: #856404; }
+        .status-badge.in_progress { background: #d1ecf1; color: #0c5460; }
+        .status-badge.completed { background: #d4edda; color: #155724; }
+        .status-badge.failed { background: #f8d7da; color: #721c24; }
+        
+        .refresh-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        
+        .refresh-btn:hover {
+            background: #0056b3;
+        }
+        
+        .clear-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        
+        .clear-btn:hover {
+            background: #545b62;
+        }
+        
+        .no-tasks {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #007bff;
+            text-decoration: none;
+        }
+        
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="status-container">
+        <a href="/" class="back-link">← Back to Watchlist</a>
+        
+        <h1>Data Population Status</h1>
+        
+        <div style="margin-bottom: 20px;">
+            <button class="refresh-btn" onclick="refreshStatus()">🔄 Refresh Status</button>
+            <button class="clear-btn" onclick="clearCompleted()">🗑️ Clear Completed</button>
+        </div>
+        
+        <div class="status-summary" id="statusSummary">
+            <!-- Summary will be populated by JavaScript -->
+        </div>
+        
+        <div class="tasks-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Stock</th>
+                        <th>Instrument Key</th>
+                        <th>Status</th>
+                        <th>Message</th>
+                        <th>Progress</th>
+                    </tr>
+                </thead>
+                <tbody id="tasksTableBody">
+                    <!-- Tasks will be populated by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="no-tasks" id="noTasks" style="display: none;">
+            <h3>No data population tasks found</h3>
+            <p>Add stocks to your watchlist to see data population status here.</p>
+        </div>
+    </div>
+
+    <script>
+        async function fetchStatus() {
+            try {
+                const response = await fetch('/api/data/population-status');
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Error fetching status:', error);
+                return null;
+            }
+        }
+        
+        function updateSummary(summary) {
+            const summaryDiv = document.getElementById('statusSummary');
+            summaryDiv.innerHTML = `
+                <div class="status-card queued">
+                    <div class="status-number">${summary.queued}</div>
+                    <div class="status-label">Queued</div>
+                </div>
+                <div class="status-card in_progress">
+                    <div class="status-number">${summary.in_progress}</div>
+                    <div class="status-label">In Progress</div>
+                </div>
+                <div class="status-card completed">
+                    <div class="status-number">${summary.completed}</div>
+                    <div class="status-label">Completed</div>
+                </div>
+                <div class="status-card failed">
+                    <div class="status-number">${summary.failed}</div>
+                    <div class="status-label">Failed</div>
+                </div>
+            `;
+        }
+        
+        function updateTasksTable(tasks) {
+            const tbody = document.getElementById('tasksTableBody');
+            const noTasksDiv = document.getElementById('noTasks');
+            
+            if (Object.keys(tasks).length === 0) {
+                tbody.innerHTML = '';
+                noTasksDiv.style.display = 'block';
+                return;
+            }
+            
+            noTasksDiv.style.display = 'none';
+            
+            tbody.innerHTML = Object.entries(tasks).map(([instrumentKey, task]) => `
+                <tr>
+                    <td><strong>${task.symbol}</strong></td>
+                    <td><code>${instrumentKey}</code></td>
+                    <td><span class="status-badge ${task.status}">${task.status.replace('_', ' ')}</span></td>
+                    <td>${task.message}</td>
+                    <td>${task.progress}%</td>
+                </tr>
+            `).join('');
+        }
+        
+        async function refreshStatus() {
+            const data = await fetchStatus();
+            if (data && data.status === 'success') {
+                updateSummary(data.summary);
+                updateTasksTable(data.tasks);
+            }
+        }
+        
+        async function clearCompleted() {
+            try {
+                const response = await fetch('/api/data/population-status', {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    await refreshStatus();
+                    alert(data.message);
+                }
+            } catch (error) {
+                console.error('Error clearing status:', error);
+                alert('Failed to clear completed tasks');
+            }
+        }
+        
+        // Initial load
+        refreshStatus();
+        
+        // Auto-refresh every 5 seconds
+        setInterval(refreshStatus, 5000);
+    </script>
+</body>
+</html>

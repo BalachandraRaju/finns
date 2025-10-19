@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PnF Matrix - Point & Figure Analysis</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #fff;
+            min-height: 100vh;
+            font-size: 14px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 15px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+
+        .header h1 {
+            font-size: 1.6rem;
+            margin: 0;
+            background: linear-gradient(45deg, #FFD700, #FFA500);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            display: inline;
+        }
+
+        .header span {
+            font-size: 0.8rem;
+            opacity: 0.8;
+            margin-left: 10px;
+        }
+
+        .controls {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 15px;
+            backdrop-filter: blur(10px);
+        }
+
+        .controls-row {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .control-group label {
+            font-weight: 600;
+            font-size: 0.8rem;
+        }
+
+        .control-group select,
+        .control-group input {
+            padding: 6px 10px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+            font-size: 0.8rem;
+            width: 80px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.9rem;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .matrix-table-container {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            overflow-x: auto;
+        }
+
+        .matrix-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        .matrix-table th,
+        .matrix-table td {
+            padding: 8px 12px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .matrix-table th {
+            background: rgba(255, 255, 255, 0.1);
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .matrix-table th:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .matrix-table tbody tr:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .stock-symbol {
+            font-weight: bold;
+            text-align: left !important;
+        }
+
+        .total-score {
+            font-weight: bold;
+            padding: 4px 8px;
+            border-radius: 12px;
+            min-width: 40px;
+            display: inline-block;
+        }
+
+        .score-super-bullish { background: linear-gradient(45deg, #4CAF50, #8BC34A); }
+        .score-bullish { background: linear-gradient(45deg, #8BC34A, #CDDC39); }
+        .score-neutral { background: linear-gradient(45deg, #FFC107, #FF9800); }
+        .score-bearish { background: linear-gradient(45deg, #FF9800, #FF5722); }
+        .score-super-bearish { background: linear-gradient(45deg, #FF5722, #F44336); }
+
+        .super-alert-badge {
+            background: linear-gradient(45deg, #FFD700, #FFA500);
+            color: #000;
+            padding: 2px 6px;
+            border-radius: 8px;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+
+        .box-score {
+            font-size: 0.8rem;
+            padding: 2px 4px;
+            border-radius: 4px;
+            margin: 1px;
+            display: inline-block;
+            min-width: 25px;
+        }
+
+        .score-positive {
+            background: rgba(76, 175, 80, 0.3);
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        .score-negative {
+            background: rgba(244, 67, 54, 0.3);
+            color: #FF5722;
+            font-weight: bold;
+        }
+
+        .filter-controls {
+            margin-bottom: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .filter-input {
+            padding: 6px 10px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.9);
+            color: #333;
+            font-size: 0.8rem;
+        }
+
+        .sort-indicator {
+            margin-left: 5px;
+            font-size: 0.7rem;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 1.2rem;
+        }
+
+        .error {
+            background: rgba(244, 67, 54, 0.2);
+            border: 1px solid #FF5722;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        .summary {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 12px;
+            margin-bottom: 15px;
+            backdrop-filter: blur(10px);
+        }
+
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            text-align: center;
+        }
+
+        .stat-item {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 8px;
+        }
+
+        .stat-value {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 3px;
+        }
+
+        .stat-label {
+            font-size: 0.7rem;
+            opacity: 0.8;
+        }
+
+        @media (max-width: 768px) {
+            .controls-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .matrix-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .box-scores {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 PnF Matrix</h1><span>Multi-timeframe P&F strength analysis</span>
+        </div>
+
+        <div class="controls">
+            <div class="controls-row">
+                <div class="control-group">
+                    <label for="timeframe">Timeframe:</label>
+                    <select id="timeframe">
+                        <option value="day" selected>Daily</option>
+                        <option value="1minute">1 Min</option>
+                        <option value="5minute">5 Min</option>
+                        <option value="15minute">15 Min</option>
+                        <option value="30minute">30 Min</option>
+                        <option value="1hour">1 Hour</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="boxSize1">1%:</label>
+                    <input type="number" id="boxSize1" value="1.0" step="0.1" min="0.1" max="5.0">
+                </div>
+
+                <div class="control-group">
+                    <label for="boxSize2">0.5%:</label>
+                    <input type="number" id="boxSize2" value="0.5" step="0.1" min="0.1" max="5.0">
+                </div>
+
+                <div class="control-group">
+                    <label for="boxSize3">0.25%:</label>
+                    <input type="number" id="boxSize3" value="0.25" step="0.05" min="0.05" max="5.0">
+                </div>
+
+                <div class="control-group">
+                    <label for="boxSize4">0.15%:</label>
+                    <input type="number" id="boxSize4" value="0.15" step="0.05" min="0.05" max="5.0">
+                </div>
+
+                <button class="btn" onclick="calculateMatrix()">Calculate</button>
+            </div>
+        </div>
+
+        <div id="summary" class="summary" style="display: none;">
+            <div class="summary-stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="totalStocks">0</div>
+                    <div class="stat-label">Total</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="superBullish">0</div>
+                    <div class="stat-label">Super Bullish</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="bullish">0</div>
+                    <div class="stat-label">Bullish</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="neutral">0</div>
+                    <div class="stat-label">Neutral</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="bearish">0</div>
+                    <div class="stat-label">Bearish</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="superBearish">0</div>
+                    <div class="stat-label">Super Bearish</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="superAlerts">0</div>
+                    <div class="stat-label">Super Alerts</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            <p>🔄 Calculating Matrix...</p>
+        </div>
+
+        <div id="error" class="error" style="display: none;"></div>
+
+        <div id="matrixContainer" class="matrix-table-container" style="display: none;">
+            <div class="filter-controls">
+                <input type="text" id="symbolFilter" class="filter-input" placeholder="Filter by symbol...">
+                <select id="strengthFilter" class="filter-input">
+                    <option value="">All Strengths</option>
+                    <option value="SUPER BULLISH">Super Bullish</option>
+                    <option value="BULLISH">Bullish</option>
+                    <option value="NEUTRAL">Neutral</option>
+                    <option value="BEARISH">Bearish</option>
+                    <option value="SUPER BEARISH">Super Bearish</option>
+                </select>
+                <select id="superAlertFilter" class="filter-input">
+                    <option value="">All Alerts</option>
+                    <option value="true">Super Alert Only</option>
+                    <option value="false">Regular Only</option>
+                </select>
+            </div>
+
+            <table class="matrix-table" id="matrixTable">
+                <thead>
+                    <tr>
+                        <th onclick="sortTable(0)">Symbol <span class="sort-indicator" id="sort-0"></span></th>
+                        <th onclick="sortTable(1)">Score <span class="sort-indicator" id="sort-1"></span></th>
+                        <th onclick="sortTable(2)">Strength <span class="sort-indicator" id="sort-2"></span></th>
+                        <th onclick="sortTable(3)">Super <span class="sort-indicator" id="sort-3"></span></th>
+                        <th>1.00%</th>
+                        <th>0.50%</th>
+                        <th>0.25%</th>
+                        <th>0.15%</th>
+                    </tr>
+                </thead>
+                <tbody id="matrixTableBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let matrixData = [];
+        let sortColumn = 1; // Default sort by score
+        let sortDirection = 'desc';
+
+        async function calculateMatrix() {
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const container = document.getElementById('matrixContainer');
+            const summary = document.getElementById('summary');
+
+            // Show loading
+            loading.style.display = 'block';
+            error.style.display = 'none';
+            container.style.display = 'none';
+            summary.style.display = 'none';
+
+            try {
+                // Get form values
+                const timeframe = document.getElementById('timeframe').value;
+                const boxSizes = [
+                    parseFloat(document.getElementById('boxSize1').value) / 100,
+                    parseFloat(document.getElementById('boxSize2').value) / 100,
+                    parseFloat(document.getElementById('boxSize3').value) / 100,
+                    parseFloat(document.getElementById('boxSize4').value) / 100
+                ];
+
+                // Make API call
+                const response = await fetch('/api/pnf-matrix', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        timeframe: timeframe,
+                        box_sizes: boxSizes
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+
+                if (data.success) {
+                    matrixData = data.results;
+                    displayTable();
+                    updateSummary(data.results);
+                    container.style.display = 'block';
+                    summary.style.display = 'block';
+                } else {
+                    throw new Error(data.error || 'Unknown error occurred');
+                }
+
+            } catch (err) {
+                console.error('Error calculating matrix:', err);
+                error.textContent = `Error: ${err.message}`;
+                error.style.display = 'block';
+            } finally {
+                loading.style.display = 'none';
+            }
+        }
+
+        function displayTable() {
+            const tbody = document.getElementById('matrixTableBody');
+            const filteredData = getFilteredData();
+            const sortedData = getSortedData(filteredData);
+
+            tbody.innerHTML = '';
+
+            sortedData.forEach(result => {
+                const row = createTableRow(result);
+                tbody.appendChild(row);
+            });
+
+            updateSortIndicators();
+        }
+
+        function createTableRow(result) {
+            const row = document.createElement('tr');
+
+            const scoreClass = getScoreClass(result.total_score);
+            const superAlertBadge = result.super_alert_eligible ?
+                '<span class="super-alert-badge">⭐</span>' : '';
+
+            // Ensure we have 4 box scores, pad with empty if needed
+            const boxScores = result.matrix_scores || [];
+            while (boxScores.length < 4) {
+                boxScores.push({ score: 0, column_type: '-' });
+            }
+
+            row.innerHTML = `
+                <td class="stock-symbol">${result.symbol} ${superAlertBadge}</td>
+                <td><span class="total-score ${scoreClass}">${result.total_score}</span></td>
+                <td>${result.matrix_strength}</td>
+                <td>${result.super_alert_eligible ? '⭐' : ''}</td>
+                ${boxScores.map(score => `
+                    <td>
+                        <span class="box-score ${score.score > 0 ? 'score-positive' : score.score < 0 ? 'score-negative' : ''}">
+                            ${score.column_type}${score.score !== 0 ? (score.score > 0 ? '+' : '') + score.score : ''}
+                        </span>
+                    </td>
+                `).join('')}
+            `;
+
+            return row;
+        }
+
+        function getScoreClass(score) {
+            if (score >= 8) return 'score-super-bullish';
+            if (score >= 6) return 'score-bullish';
+            if (score >= -5) return 'score-neutral';
+            if (score >= -6) return 'score-bearish';
+            return 'score-super-bearish';
+        }
+
+        function sortTable(columnIndex) {
+            if (sortColumn === columnIndex) {
+                sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortColumn = columnIndex;
+                sortDirection = columnIndex === 1 ? 'desc' : 'asc'; // Default desc for score, asc for others
+            }
+            displayTable();
+        }
+
+        function getSortedData(data) {
+            return [...data].sort((a, b) => {
+                let aVal, bVal;
+
+                switch (sortColumn) {
+                    case 0: // Symbol
+                        aVal = a.symbol;
+                        bVal = b.symbol;
+                        break;
+                    case 1: // Score
+                        aVal = a.total_score;
+                        bVal = b.total_score;
+                        break;
+                    case 2: // Strength
+                        aVal = a.matrix_strength;
+                        bVal = b.matrix_strength;
+                        break;
+                    case 3: // Super Alert
+                        aVal = a.super_alert_eligible ? 1 : 0;
+                        bVal = b.super_alert_eligible ? 1 : 0;
+                        break;
+                    default:
+                        return 0;
+                }
+
+                if (typeof aVal === 'string') {
+                    aVal = aVal.toLowerCase();
+                    bVal = bVal.toLowerCase();
+                }
+
+                if (sortDirection === 'asc') {
+                    return aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+                } else {
+                    return aVal > bVal ? -1 : aVal < bVal ? 1 : 0;
+                }
+            });
+        }
+
+        function getFilteredData() {
+            const symbolFilter = document.getElementById('symbolFilter').value.toLowerCase();
+            const strengthFilter = document.getElementById('strengthFilter').value;
+            const superAlertFilter = document.getElementById('superAlertFilter').value;
+
+            return matrixData.filter(item => {
+                const symbolMatch = !symbolFilter || item.symbol.toLowerCase().includes(symbolFilter);
+                const strengthMatch = !strengthFilter || item.matrix_strength.includes(strengthFilter);
+                const superAlertMatch = !superAlertFilter ||
+                    (superAlertFilter === 'true' && item.super_alert_eligible) ||
+                    (superAlertFilter === 'false' && !item.super_alert_eligible);
+
+                return symbolMatch && strengthMatch && superAlertMatch;
+            });
+        }
+
+        function updateSortIndicators() {
+            // Clear all indicators
+            for (let i = 0; i < 4; i++) {
+                const indicator = document.getElementById(`sort-${i}`);
+                if (indicator) {
+                    indicator.textContent = '';
+                }
+            }
+
+            // Set current sort indicator
+            const currentIndicator = document.getElementById(`sort-${sortColumn}`);
+            if (currentIndicator) {
+                currentIndicator.textContent = sortDirection === 'asc' ? '↑' : '↓';
+            }
+        }
+
+        function updateSummary(results) {
+            const summary = document.getElementById('summary');
+
+            let counts = {
+                total: results.length,
+                superBullish: 0,
+                bullish: 0,
+                neutral: 0,
+                bearish: 0,
+                superBearish: 0,
+                superAlerts: 0
+            };
+
+            results.forEach(result => {
+                if (result.matrix_strength.includes('SUPER BULLISH')) counts.superBullish++;
+                else if (result.matrix_strength.includes('BULLISH')) counts.bullish++;
+                else if (result.matrix_strength.includes('NEUTRAL')) counts.neutral++;
+                else if (result.matrix_strength.includes('BEARISH') && !result.matrix_strength.includes('SUPER')) counts.bearish++;
+                else if (result.matrix_strength.includes('SUPER BEARISH')) counts.superBearish++;
+
+                if (result.super_alert_eligible) counts.superAlerts++;
+            });
+
+            document.getElementById('totalStocks').textContent = counts.total;
+            document.getElementById('superBullish').textContent = counts.superBullish;
+            document.getElementById('bullish').textContent = counts.bullish;
+            document.getElementById('neutral').textContent = counts.neutral;
+            document.getElementById('bearish').textContent = counts.bearish;
+            document.getElementById('superBearish').textContent = counts.superBearish;
+            document.getElementById('superAlerts').textContent = counts.superAlerts;
+
+            summary.style.display = 'block';
+        }
+
+        // Add event listeners for filters
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('symbolFilter').addEventListener('input', displayTable);
+            document.getElementById('strengthFilter').addEventListener('change', displayTable);
+            document.getElementById('superAlertFilter').addEventListener('change', displayTable);
+
+            // Auto-calculate on page load
+            calculateMatrix();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ stock.symbol }} Chart</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        .chart-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .chart-header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .chart-title {
+            margin: 0;
+            font-size: 1.8em;
+            color: white;
+            font-weight: 600;
+        }
+
+        .chart-title .symbol {
+            font-weight: 700;
+        }
+
+        .chart-title .company-name {
+            font-size: 0.7em;
+            opacity: 0.9;
+            font-weight: 400;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chart-controls-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .control-group label {
+            font-size: 0.85em;
+            font-weight: 600;
+            color: #555;
+            margin: 0;
+        }
+
+        .control-group select {
+            padding: 8px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 0.95em;
+            background: white;
+            transition: all 0.2s;
+        }
+
+        .control-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .feature-toggles {
+            grid-column: 1 / -1;
+            display: flex;
+            gap: 20px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            flex-wrap: wrap;
+        }
+
+        .feature-toggles label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            font-size: 0.9em;
+            color: #333;
+        }
+
+        .feature-toggles input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            text-decoration: none;
+            display: inline-block;
+            transition: transform 0.2s;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .chart-container {
+            padding: 0;
+            margin: 0;
+            width: 100%;
+            max-width: 100%;
+        }
+
+        #chart-iframe {
+            width: 100%;
+            height: calc(100vh - 250px);
+            border: none;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <header class="chart-header">
+        <div class="chart-header-top">
+            <h1 class="chart-title">
+                <span class="symbol">{{ stock.symbol }}</span>
+                <span class="company-name">{{ stock.name }}</span>
+            </h1>
+            <div class="header-actions">
+                <button id="backfill-today-btn" class="btn-primary" onclick="runBackfillToday()">⏱ Backfill All (Today)</button>
+                <a href="/" class="btn-primary">← Back to Watchlist</a>
+            </div>
+        </div>
+
+        <div class="chart-controls-grid">
+            <div class="control-group">
+                <label for="stock-selector">📊 Stock</label>
+                <select id="stock-selector" onchange="changeStock()">
+                    {% for ws in watchlist_stocks %}
+                        <option value="{{ ws.instrument_key }}" {% if ws.instrument_key == stock.instrument_key %}selected{% endif %}>
+                            {{ ws.symbol }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>🕒 Data</label>
+                <div id="data-availability" style="font-size: 0.75em; color: #fff; font-weight: 500; background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 4px; line-height: 1.3; max-width: 180px;">
+                    <div id="data-start" style="white-space: nowrap;">Loading...</div>
+                    <div id="data-end" style="white-space: nowrap; opacity: 0.85;">...</div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label for="interval-selector">⏱️ Interval</label>
+                <select id="interval-selector" onchange="updateChart()">
+                    <option value="1minute" selected>1 Minute</option>
+                    <option value="30minute">30 Minutes</option>
+                    <option value="day">Daily</option>
+                </select>
+            </div>
+
+            <div class="control-group" id="time-range-selector">
+                <label for="time-range">📅 Time Range</label>
+                <select id="time-range" onchange="updateChart()">
+                    <option value="1month">Last 1 Month</option>
+                    <option value="2months" selected>Last 2 Months</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="box-size-selector">📦 Box Size</label>
+                <select id="box-size-selector" onchange="updateChart()">
+                    {% for size in box_sizes %}
+                        <option value="{{ size / 100 }}" {% if (size / 100) == 0.0025 %}selected{% endif %}>{{ size }}%</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="feature-toggles">
+                <label>
+                    <input type="checkbox" id="fibonacci-toggle" checked onchange="updateChart()">
+                    📊 Fibonacci
+                </label>
+                <label>
+                    <input type="checkbox" id="ema-toggle" checked onchange="updateChart()">
+                    📈 20-EMA
+                </label>
+                <label>
+                    <input type="checkbox" id="trendlines-toggle" checked onchange="updateChart()">
+                    📉 Trend Lines
+                </label>
+                <label>
+                    <input type="checkbox" id="anchor-points-toggle" checked onchange="updateChart()">
+                    🎯 Anchor Points
+                </label>
+            </div>
+        </div>
+    </header>
+
+    <div class="chart-container">
+        <iframe
+            id="chart-iframe"
+            title="Point and Figure Chart"
+        ></iframe>
+    </div>
+
+    <script>
+        function changeStock() {
+            const stockSelector = document.getElementById('stock-selector');
+            const selectedInstrumentKey = stockSelector.value;
+
+            // Navigate to the new stock's chart page
+            window.location.href = `/chart/${encodeURIComponent(selectedInstrumentKey)}`;
+        }
+
+        function updateChart() {
+            const stockSelector = document.getElementById('stock-selector');
+            const intervalSelector = document.getElementById('interval-selector');
+            const boxSizeSelector = document.getElementById('box-size-selector');
+            const timeRangeSelector = document.getElementById('time-range');
+            const timeRangeSelectorDiv = document.getElementById('time-range-selector');
+
+            // Get feature toggles
+            const fibonacciToggle = document.getElementById('fibonacci-toggle');
+            const emaToggle = document.getElementById('ema-toggle');
+            const trendlinesToggle = document.getElementById('trendlines-toggle');
+            const anchorPointsToggle = document.getElementById('anchor-points-toggle');
+
+            const selectedInstrumentKey = stockSelector.value;
+            const interval = intervalSelector.value;
+            const boxSize = boxSizeSelector.value;
+
+            // Show/hide time range selector based on interval
+            if (interval === '1minute') {
+                timeRangeSelectorDiv.style.display = 'block';
+            } else {
+                timeRangeSelectorDiv.style.display = 'none';
+            }
+
+            // Auto-adjust box size for different intervals (defaults: 1m=0.25%, 30m=0.5%, Day=1%)
+            const current = parseFloat(boxSize);
+            if (interval === '1minute' && current !== 0.0025) {
+                boxSizeSelector.value = '0.0025'; // 0.25% for 1-minute
+            } else if (interval === '30minute' && current !== 0.005) {
+                boxSizeSelector.value = '0.005';  // 0.5% for 30-minute
+            } else if (interval === 'day' && current !== 0.01) {
+                boxSizeSelector.value = '0.01';   // 1% for daily
+            }
+
+            // Build URL with parameters using the selected stock
+            const iframe = document.getElementById('chart-iframe');
+            const baseUrl = `/chart_data/${encodeURIComponent(selectedInstrumentKey)}`;
+            let url = `${baseUrl}?box_size=${boxSize}&interval=${interval}`;
+
+            // Add time range parameter for 1-minute charts
+            if (interval === '1minute') {
+                const timeRange = timeRangeSelector.value;
+                url += `&time_range=${timeRange}`;
+            }
+
+            // Add feature toggle parameters
+            url += `&fibonacci=${fibonacciToggle.checked}`;
+            url += `&ema=${emaToggle.checked}`;
+            url += `&trendlines=${trendlinesToggle.checked}`;
+            url += `&anchor_points=${anchorPointsToggle.checked}`;
+
+            // Show loading indicator
+            iframe.style.opacity = '0.5';
+
+            iframe.src = url;
+
+            // Remove loading indicator when loaded and update data availability
+            iframe.onload = function() {
+                iframe.style.opacity = '1';
+                try {
+                    const meta = iframe.contentDocument && iframe.contentDocument.getElementById('chart-meta');
+                    const start = meta ? meta.getAttribute('data-start') : null;
+                    const end = meta ? meta.getAttribute('data-end') : null;
+                    const startEl = document.getElementById('data-start');
+                    const endEl = document.getElementById('data-end');
+
+                    console.log('Chart meta found:', meta ? 'yes' : 'no');
+                    console.log('Data start:', start);
+                    console.log('Data end:', end);
+
+                    if (start && end && startEl && endEl) {
+                        // Format: show only date and time, remove milliseconds
+                        const startFormatted = start.split('.')[0];
+                        const endFormatted = end.split('.')[0];
+                        startEl.textContent = `From: ${startFormatted}`;
+                        endEl.textContent = `To: ${endFormatted}`;
+                    } else if (startEl && endEl) {
+                        startEl.textContent = 'No data';
+                        endEl.textContent = '';
+                        startEl.style.color = '#f88';  // Red to indicate issue
+                    }
+                } catch (e) {
+                    console.error('Error reading chart metadata:', e);
+                    const startEl = document.getElementById('data-start');
+                    const endEl = document.getElementById('data-end');
+                    if (startEl && endEl) {
+                        startEl.textContent = 'Error loading';
+                        endEl.textContent = '';
+                        startEl.style.color = '#f88';
+                    }
+                }
+            };
+        }
+
+        function runBackfillToday() {
+            const btn = document.getElementById('backfill-today-btn');
+            if (!btn) return;
+            const prevText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '⏳ Queued backfill...';
+            fetch('/api/data/backfill-today', { method: 'POST' })
+                .then(r => r.json())
+                .then(res => {
+                    if (res.status === 'queued' || res.status === 'success') {
+                        btn.textContent = '✅ Backfill queued';
+                    } else {
+                        btn.textContent = '⚠️ Failed to queue';
+                        console.error('Backfill error:', res.message || res);
+                        alert('Backfill failed: ' + (res.message || 'Unknown error'));
+                    }
+                })
+                .catch(err => {
+                    btn.textContent = '⚠️ Error';
+                    console.error('Backfill error:', err);
+                    alert('Backfill error: ' + err);
+                })
+                .finally(() => {
+                    setTimeout(() => { btn.disabled = false; btn.textContent = prevText; }, 3000);
+                });
+        }
+
+
+
+        // Legacy function for backward compatibility
+        function changeBoxSize() {
+            updateChart();
+        }
+
+        // Initial chart load
+        document.addEventListener('DOMContentLoaded', updateChart);
+    </script>
+</body>
+</html>
