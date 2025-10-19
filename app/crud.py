@@ -240,6 +240,12 @@ def get_settings():
         return in_memory_settings
 
     settings = redis_client.hgetall("settings")
+
+    # Get dhan_access_token from Redis, or fall back to environment variable
+    dhan_token = settings.get("dhan_access_token", None)
+    if not dhan_token:
+        dhan_token = os.getenv("DHAN_ACCESS_TOKEN", None)
+
     return {
         "rsi_threshold": int(settings.get("rsi_threshold", 70)),
         "telegram_alerts_enabled": settings.get("telegram_alerts_enabled", "True") == "True",
@@ -251,7 +257,7 @@ def get_settings():
         "enable_quadruple_top_bottom": settings.get("enable_quadruple_top_bottom", "True") == "True",
         "enable_pole_patterns": settings.get("enable_pole_patterns", "True") == "True",
         "enable_catapult_patterns": settings.get("enable_catapult_patterns", "True") == "True",
-        "dhan_access_token": settings.get("dhan_access_token", None),
+        "dhan_access_token": dhan_token,
     }
 
 def save_settings(settings: Settings):

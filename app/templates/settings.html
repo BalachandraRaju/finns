@@ -431,7 +431,7 @@
         // Convert form data to JSON for submission
         document.getElementById('settings-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const formData = new FormData(e.target);
             const settings = {
                 rsi_threshold: parseInt(formData.get('rsi_threshold') || 70),
@@ -445,6 +445,12 @@
                 enable_pole_patterns: formData.get('enable_pole_patterns') === 'on',
                 enable_catapult_patterns: formData.get('enable_catapult_patterns') === 'on',
             };
+
+            // Add dhan_access_token if provided
+            const dhanToken = formData.get('dhan_access_token');
+            if (dhanToken && dhanToken.trim() !== '') {
+                settings.dhan_access_token = dhanToken.trim();
+            }
 
             try {
                 const response = await fetch('/api/settings', {
