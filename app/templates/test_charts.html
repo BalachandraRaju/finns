@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Chart Patterns</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .chart-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .chart-header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .chart-title {
+            margin: 0;
+            font-size: 1.8em;
+            color: white;
+            font-weight: 600;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chart-controls-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .control-group label {
+            font-size: 0.85em;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .control-group select,
+        .control-group input {
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+    </style>
+</head>
+<body>
+    <header class="chart-header">
+        <div class="chart-header-top">
+            <h1 class="chart-title">📊 Test Chart Patterns</h1>
+            <div class="header-actions">
+                <a href="/" class="btn btn-secondary">← Back to Home</a>
+                <a href="/alerts" class="btn btn-primary">🔔 View Alerts</a>
+            </div>
+        </div>
+        <div class="chart-controls-grid">
+            <div class="control-group">
+                <label for="pattern-selector">📋 Pattern</label>
+                <select id="pattern-selector" onchange="updateTestChart()">
+                    {% for pattern_key, pattern_info in test_patterns.items() %}
+                        <option value="{{ pattern_key }}" {% if pattern_key == selected_pattern %}selected{% endif %}>
+                            {{ pattern_info.name }} ({{ pattern_info.expected_signal }})
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="data-source-selector">📊 Data Source</label>
+                <select id="data-source-selector" onchange="updateDataSourceAndPresets()">
+                    <option value="dummy" selected>📚 Dummy Pattern Data</option>
+                    <option value="daily">📈 Daily Analysis</option>
+                    <option value="intraday">⚡ Intraday Trading</option>
+                </select>
+            </div>
+
+            <div class="control-group" id="stock-selector-group" style="display: none;">
+                <label for="stock-selector" id="stock-selector-label">📈 Stock</label>
+                <select id="stock-selector" onchange="updateTestChart()">
+                    <option value="">Select a stock...</option>
+                    {% for stock in watchlist_stocks %}
+                        <option value="{{ stock.instrument_key }}">{{ stock.name }} ({{ stock.symbol }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="box-size-selector">📦 Box Size</label>
+                <select id="box-size-selector" onchange="updateTestChart()">
+                    <option value="0.001">0.1%</option>
+                    <option value="0.0015">0.15%</option>
+                    <option value="0.0025" selected>0.25%</option>
+                    <option value="0.005">0.5%</option>
+                    <option value="0.01">1%</option>
+                    <option value="0.015">1.5%</option>
+                    <option value="0.02">2%</option>
+                </select>
+                <small style="display: block; margin-top: 5px; color: #888; font-size: 11px;">
+                    ℹ️ Dummy patterns use fixed 0.25% box size
+                </small>
+            </div>
+
+            <div class="control-group">
+                <label for="reversal-selector">🔄 Reversal</label>
+                <select id="reversal-selector" onchange="updateTestChart()">
+                    <option value="2">2 Box</option>
+                    <option value="3" selected>3 Box</option>
+                    <option value="4">4 Box</option>
+                    <option value="5">5 Box</option>
+                </select>
+            </div>
+
+            <div class="control-group" id="interval-selector-group" style="display: none;">
+                <label for="interval-selector" id="interval-selector-label">⏱️ Interval</label>
+                <select id="interval-selector" onchange="updateTestChart()">
+                    <option value="1minute" selected>1 Minute</option>
+                    <option value="3minute">3 Minutes</option>
+                    <option value="5minute">5 Minutes</option>
+                    <option value="15minute">15 Minutes</option>
+                    <option value="30minute">30 Minutes</option>
+                    <option value="1hour">1 Hour</option>
+                    <option value="day">Daily</option>
+                </select>
+            </div>
+
+            <div class="control-group" id="time-range-selector-group" style="display: none;">
+                <label for="time-range-selector" id="time-range-selector-label">📅 Time Range</label>
+                <select id="time-range-selector" onchange="updateTestChart()">
+                    <option value="1day">Last 1 Day</option>
+                    <option value="3days">Last 3 Days</option>
+                    <option value="1week">Last 1 Week</option>
+                    <option value="2weeks">Last 2 Weeks</option>
+                    <option value="1month">Last 1 Month</option>
+                    <option value="2months" selected>Last 2 Months</option>
+                    <option value="3months">Last 3 Months</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label style="opacity: 0.8;">Chart Features</label>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <label style="display: flex; align-items: center; gap: 5px; font-size: 0.85em;">
+                        <input type="checkbox" id="fibonacci-toggle" onchange="updateTestChart()" checked>
+                        📊 Fibonacci
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 5px; font-size: 0.85em;">
+                        <input type="checkbox" id="ema-toggle" onchange="updateTestChart()" checked>
+                        📈 20-EMA
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 5px; font-size: 0.85em;">
+                        <input type="checkbox" id="trendlines-toggle" onchange="updateTestChart()" checked>
+                        📐 Trends
+                    </label>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Chart Container - Full Width -->
+    <div class="chart-container" style="margin: 0; padding: 0 20px; width: calc(100% - 40px); position: relative;">
+        <!-- Loading Spinner -->
+        <div id="chart-loader" style="
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1000;
+            background: rgba(0,0,0,0.8);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            color: white;
+            display: none;
+        ">
+            <div style="
+                border: 4px solid #f3f3f3;
+                border-top: 4px solid #007bff;
+                border-radius: 50%;
+                width: 40px;
+                height: 40px;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 10px auto;
+            "></div>
+            <div>📊 Loading Chart...</div>
+        </div>
+
+        <iframe
+            id="test-chart-iframe"
+            title="Test Point and Figure Chart"
+            style="width: 100%; height: 85vh; border: none; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"
+        ></iframe>
+    </div>
+
+    <style>
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Enhanced dropdown styling */
+        .trading-dropdown {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+            color: white !important;
+            border: 2px solid #4a5568 !important;
+            border-radius: 8px !important;
+            padding: 8px 12px !important;
+            font-weight: 600 !important;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1) !important;
+            transition: all 0.3s ease !important;
+        }
+
+        .trading-dropdown:hover {
+            transform: translateY(-1px) !important;
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15) !important;
+        }
+
+        .trading-dropdown:focus {
+            outline: none !important;
+            border-color: #63b3ed !important;
+            box-shadow: 0 0 0 3px rgba(99, 179, 237, 0.3) !important;
+        }
+
+        /* Enhanced select styling for all dropdowns */
+        select {
+            background: #2d3748 !important;
+            color: white !important;
+            border: 1px solid #4a5568 !important;
+            border-radius: 6px !important;
+            padding: 6px 10px !important;
+            transition: all 0.2s ease !important;
+        }
+
+        select:hover {
+            border-color: #63b3ed !important;
+        }
+
+        select:focus {
+            outline: none !important;
+            border-color: #63b3ed !important;
+            box-shadow: 0 0 0 2px rgba(99, 179, 237, 0.2) !important;
+        }
+
+        /* Enhanced checkbox styling */
+        input[type="checkbox"] {
+            width: 18px !important;
+            height: 18px !important;
+            margin-right: 8px !important;
+            accent-color: #667eea !important;
+        }
+
+        /* Trading preset indicators */
+        .preset-indicator {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin-left: 8px;
+        }
+
+        .preset-daily {
+            background: #e6fffa;
+            color: #234e52;
+        }
+
+        .preset-intraday {
+            background: #fef5e7;
+            color: #744210;
+        }
+    </style>
+
+    <div class="container">
+        <!-- Pattern Information Panel -->
+        <div class="pattern-info-panel" style="margin-top: 20px; padding: 15px; background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h3 style="margin: 0 0 12px 0; color: #495057; font-size: 1.2em;">📋 Pattern Information</h3>
+            <div id="pattern-details">
+                {% if selected_pattern and test_patterns[selected_pattern] %}
+                    <div class="pattern-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff;">
+                        <h4 style="margin: 0 0 8px 0; color: #007bff;">{{ test_patterns[selected_pattern].name }}</h4>
+                        <p style="margin: 0 0 6px 0;"><strong>Expected Signal:</strong>
+                            <span class="signal-badge signal-{{ test_patterns[selected_pattern].expected_signal.lower() }}" style="padding: 2px 8px; border-radius: 4px; font-weight: bold; {% if test_patterns[selected_pattern].expected_signal == 'BUY' %}background: #d4edda; color: #155724;{% else %}background: #f8d7da; color: #721c24;{% endif %}">
+                                {{ test_patterns[selected_pattern].expected_signal }}
+                            </span>
+                        </p>
+                        <p style="margin: 0 0 6px 0; color: #6c757d;"><strong>Description:</strong> {{ test_patterns[selected_pattern].description }}</p>
+                        <p style="margin: 0; color: #6c757d; font-size: 0.9em;"><strong>Test Purpose:</strong> Verify that the chart correctly identifies this pattern and generates the expected signal.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Alert Trigger Analysis Panel -->
+        <div class="analysis-panel" id="trigger-analysis">
+            <h3>🚨 One-Time Alert System</h3>
+            <div class="trigger-analysis-grid">
+                <div class="analysis-item">
+                    <h4>🎯 LIVE Trading Alert System:</h4>
+                    <div id="trigger-points">
+                        <p>🚨 <strong>CRITICAL FOR LIVE TRADING:</strong> Alerts fire ONLY on the <strong>LATEST/RIGHTMOST</strong> column.</p>
+                        <p>💰 <strong>Multiple columns:</strong> Ignores old breakouts (col 4) - alerts on CURRENT breakout (col 13).</p>
+                        <p>🎯 <strong>Real-time focus:</strong> No historical alerts - only actionable signals for immediate trading.</p>
+                    </div>
+                </div>
+                <div class="analysis-item">
+                    <h4>📊 Alert Logic:</h4>
+                    <div id="trigger-types">
+                        <div class="alert-logic">
+                            <h5>🧠 LIVE Trading Logic:</h5>
+                            <ul>
+                                <li><strong>Latest Column Focus:</strong> Alerts only on current/latest data</li>
+                                <li><strong>Real-time Breakouts:</strong> Immediate alerts when breakouts happen NOW</li>
+                                <li><strong>One-Time Firing:</strong> Alert fires only once per pattern</li>
+                                <li><strong>No Historical Alerts:</strong> Prevents useless old signals</li>
+                            </ul>
+                        </div>
+                        <div class="alert-logic">
+                            <h5>⭐ Alert Markers:</h5>
+                            <ul>
+                                <li><strong>Gold Stars:</strong> BUY alerts (pattern confirmed)</li>
+                                <li><strong>Red Stars:</strong> SELL alerts (pattern confirmed)</li>
+                                <li><strong>Positioned:</strong> Exact trigger point on chart</li>
+                                <li><strong>Unique:</strong> Each pattern triggers only once</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pattern Analysis Panel -->
+        <div class="analysis-panel" id="pattern-analysis">
+            <h3>🔍 Pattern Analysis</h3>
+            <div class="analysis-grid">
+                <div class="analysis-item">
+                    <h4>What to Look For:</h4>
+                    <ul id="analysis-points">
+                        <!-- Will be populated by JavaScript based on selected pattern -->
+                    </ul>
+                </div>
+                <div class="analysis-item">
+                    <h4>One-Time Alert Validation:</h4>
+                    <div id="validation-checklist">
+                        <label><input type="checkbox"> Pattern formation is clear and complete</label><br>
+                        <label><input type="checkbox"> Only ONE alert per pattern (no spam)</label><br>
+                        <label><input type="checkbox"> Alert fires at pattern confirmation</label><br>
+                        <label><input type="checkbox"> Signal direction matches expectation</label><br>
+                        <label><input type="checkbox"> Trigger timing is logical</label><br>
+                        <label><input type="checkbox"> No duplicate alerts for same pattern</label><br>
+                        <label><input type="checkbox"> Chart shows confirmed pattern state</label><br>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Real Data Information Panel -->
+        <div class="real-data-panel" id="real-data-info" style="display: none;">
+            <h3>📈 Real Stock Data Analysis</h3>
+            <div id="real-data-content">
+                <div class="analysis-grid">
+                    <div class="analysis-item">
+                        <h4>📊 Stock Information</h4>
+                        <div id="stock-details">
+                            <p>Selected stock details will appear here</p>
+                        </div>
+                    </div>
+                    <div class="analysis-item">
+                        <h4>🔍 Pattern Detection Guide</h4>
+                        <div id="pattern-detection-results">
+                            <p>🔍 <strong>Analyzing real market data</strong> for pattern formations</p>
+                            <p>💡 <strong>Look for selected pattern characteristics</strong> in actual price movements</p>
+                            <p>⚠️ <strong>Real data may not always show perfect patterns</strong> - markets are dynamic</p>
+                            <p>📊 <strong>Experiment with different box sizes</strong> to see how patterns emerge</p>
+                            <p>⏰ <strong>Try different time intervals</strong> - patterns vary by timeframe</p>
+                            <p>📅 <strong>Adjust time range</strong> for more or less historical data</p>
+                            <p>🎯 <strong>Compare with dummy patterns</strong> to understand ideal formations</p>
+                            <p>⭐ <strong>Watch for alert triggers</strong> when patterns complete</p>
+                            <div style="margin-top: 10px; padding: 10px; background: #f0f8ff; border-radius: 5px;">
+                                <p><strong>💡 Timeframe Tips:</strong></p>
+                                <p>• <strong>1-5 min:</strong> Intraday scalping patterns</p>
+                                <p>• <strong>15-30 min:</strong> Short-term swing patterns</p>
+                                <p>• <strong>1 hour:</strong> Intraday trend patterns</p>
+                                <p>• <strong>Daily:</strong> Medium-term patterns</p>
+                                <p>• <strong>Weekly:</strong> Long-term trend patterns</p>
+                            </div>
+                            <div style="margin-top: 10px; padding: 10px; background: #fff3cd; border-radius: 5px;">
+                                <p><strong>📊 Fibonacci Levels:</strong></p>
+                                <p>• <strong>Calculation:</strong> From Swing Low (bottom) to Swing High (top)</p>
+                                <p>• <strong>Key Levels:</strong> 23.6%, 38.2%, 50%, 61.8%, 78.6%</p>
+                                <p>• <strong>Golden Ratio:</strong> 61.8% (most important retracement)</p>
+                                <p>• <strong>Mid-Point:</strong> 50% (psychological support/resistance)</p>
+                                <p>• <strong>Usage:</strong> Identify potential reversal zones</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Pattern analysis data
+        const patternAnalysis = {
+            'bullish_breakout': [
+                'Look for double top formation with two similar highs',
+                'X columns breaking above the double top resistance level',
+                'Strong follow-through momentum after breakout',
+                'Volume typically increases on breakout and follow-through',
+                'Previous consolidation between the two tops should be visible'
+            ],
+            'bearish_breakdown': [
+                'Look for double bottom formation with two similar lows',
+                'O columns breaking below the double bottom support level',
+                'Strong follow-through momentum after breakdown',
+                'Volume typically increases on breakdown and follow-through',
+                'Previous consolidation between the two bottoms should be visible'
+            ],
+            'triple_top': [
+                'Look for triple top formation with three similar highs',
+                'X columns breaking above the triple top resistance level after three failed attempts',
+                'Strong follow-through momentum after final breakout',
+                'Volume typically increases significantly on the successful breakout',
+                'Previous consolidation and pullbacks between the three tops should be visible',
+                'Third attempt breakout shows strong conviction and momentum'
+            ],
+
+            'triple_bottom': [
+                'Look for triple bottom formation with three similar lows',
+                'O columns breaking below the triple bottom support level after three failed attempts',
+                'Strong follow-through momentum after final breakdown',
+                'Volume typically increases significantly on the successful breakdown',
+                'Previous consolidation and rallies between the three bottoms should be visible',
+                'Third attempt breakdown shows strong conviction and momentum'
+            ],
+            'quadruple_top': [
+                'Look for quadruple top formation with four similar highs',
+                'X columns breaking above the quadruple top resistance level after four failed attempts',
+                'Ultimate follow-through momentum after final breakout',
+                'Volume typically explodes on the successful breakout',
+                'Previous consolidation and pullbacks between the four tops should be visible',
+                'Fourth attempt breakout shows ultimate conviction and maximum momentum',
+                'Strongest possible bullish signal - resistance tested four times before breaking'
+            ],
+            'quadruple_bottom': [
+                'Look for quadruple bottom formation with four similar lows',
+                'O columns breaking below the quadruple bottom support level after four failed attempts',
+                'Ultimate follow-through momentum after final breakdown',
+                'Volume typically explodes on the successful breakdown',
+                'Previous consolidation and rallies between the four bottoms should be visible',
+                'Fourth attempt breakdown shows ultimate conviction and maximum momentum',
+                'Strongest possible bearish signal - support tested four times before breaking'
+            ],
+            'ascending_triangle': [
+                'Horizontal resistance line at top',
+                'Rising support line (higher lows)',
+                'Decreasing volume during formation',
+                'Breakout above resistance with volume'
+            ]
+        };
+
+        // One-time alert trigger expectations for each pattern
+        const triggerExpectations = {
+            'bullish_breakout': {
+                'expected_triggers': 1,
+                'key_trigger': 'Alert when price breaks above double top resistance with follow-through',
+                'timing': 'Fires on CURRENT column when breaking above the second top',
+                'logic': 'Double top buy: Alert on breakout above resistance + strong follow-through momentum'
+            },
+            'bearish_breakdown': {
+                'expected_triggers': 1,
+                'key_trigger': 'Alert when price breaks below double bottom support with follow-through',
+                'timing': 'Fires on CURRENT column when breaking below the second bottom',
+                'logic': 'Double bottom sell: Alert on breakdown below support + strong follow-through momentum'
+            },
+            'triple_top': {
+                'expected_triggers': 1,
+                'key_trigger': 'Alert when price breaks above triple top resistance with follow-through',
+                'timing': 'Fires on CURRENT column when breaking above the third top',
+                'logic': 'Triple top buy: Alert on breakout above resistance after three failed attempts + strong follow-through momentum'
+            },
+            'double_top': {
+                'expected_triggers': 1,
+                'key_trigger': 'Single alert when double top pattern completes',
+                'timing': 'Alert fires ONCE when price breaks below valley after second peak',
+                'logic': 'Waits for two similar peaks, then confirms on breakdown'
+            },
+            'triple_bottom': {
+                'expected_triggers': 1,
+                'key_trigger': 'Alert when price breaks below triple bottom support with follow-through',
+                'timing': 'Fires on CURRENT column when breaking below the third bottom',
+                'logic': 'Triple bottom sell: Alert on breakdown below support after three failed attempts + strong follow-through momentum'
+            },
+            'quadruple_top': {
+                'expected_triggers': 1,
+                'key_trigger': 'Alert when price breaks above quadruple top resistance with ultimate follow-through',
+                'timing': 'Fires on CURRENT column when breaking above the fourth top',
+                'logic': 'Quadruple top buy: Alert on breakout above resistance after four failed attempts + ultimate follow-through momentum'
+            },
+            'quadruple_bottom': {
+                'expected_triggers': 1,
+                'key_trigger': 'Alert when price breaks below quadruple bottom support with ultimate follow-through',
+                'timing': 'Fires on CURRENT column when breaking below the fourth bottom',
+                'logic': 'Quadruple bottom sell: Alert on breakdown below support after four failed attempts + ultimate follow-through momentum'
+            },
+            'ascending_triangle': {
+                'expected_triggers': 1,
+                'key_trigger': 'Single alert when triangle breaks out',
+                'timing': 'Alert fires ONCE when price breaks above horizontal resistance',
+                'logic': 'Tracks horizontal resistance and rising support, fires on breakout'
+            }
+        };
+
+        function updateDataSourceAndPresets() {
+            const dataSourceSelector = document.getElementById('data-source-selector');
+            const dataSource = dataSourceSelector.value;
+
+            // Apply presets based on selection
+            if (dataSource === 'daily') {
+                // Daily analysis preset: 0.25% box, 2 months data
+                document.getElementById('box-size-selector').value = '0.0025';
+                document.getElementById('interval-selector').value = 'day';
+                document.getElementById('time-range-selector').value = '2months';
+                showRealDataControls();
+            } else if (dataSource === 'intraday') {
+                // Intraday trading preset: 1min, 1 month data
+                document.getElementById('box-size-selector').value = '0.0025';
+                document.getElementById('interval-selector').value = '1minute';
+                document.getElementById('time-range-selector').value = '1month';
+                showRealDataControls();
+            } else {
+                // Dummy data - hide real data controls
+                hideRealDataControls();
+            }
+
+            updateTestChart();
+        }
+
+        function showRealDataControls() {
+            const stockSelectorGroup = document.getElementById('stock-selector-group');
+            const intervalSelectorGroup = document.getElementById('interval-selector-group');
+            const timeRangeSelectorGroup = document.getElementById('time-range-selector-group');
+
+            if (stockSelectorGroup) stockSelectorGroup.style.display = 'flex';
+            if (intervalSelectorGroup) intervalSelectorGroup.style.display = 'flex';
+            if (timeRangeSelectorGroup) timeRangeSelectorGroup.style.display = 'flex';
+        }
+
+        function hideRealDataControls() {
+            const stockSelectorGroup = document.getElementById('stock-selector-group');
+            const intervalSelectorGroup = document.getElementById('interval-selector-group');
+            const timeRangeSelectorGroup = document.getElementById('time-range-selector-group');
+
+            if (stockSelectorGroup) stockSelectorGroup.style.display = 'none';
+            if (intervalSelectorGroup) intervalSelectorGroup.style.display = 'none';
+            if (timeRangeSelectorGroup) timeRangeSelectorGroup.style.display = 'none';
+        }
+
+        function updateTestChart() {
+            const patternSelector = document.getElementById('pattern-selector');
+            const boxSizeSelector = document.getElementById('box-size-selector');
+            const reversalSelector = document.getElementById('reversal-selector');
+            const dataSourceSelector = document.getElementById('data-source-selector');
+            const stockSelector = document.getElementById('stock-selector');
+            const intervalSelector = document.getElementById('interval-selector');
+            const timeRangeSelector = document.getElementById('time-range-selector');
+            const fibonacciToggle = document.getElementById('fibonacci-toggle');
+            const emaToggle = document.getElementById('ema-toggle');
+            const trendlinesToggle = document.getElementById('trendlines-toggle');
+
+            const pattern = patternSelector.value;
+            const boxSize = boxSizeSelector.value;
+            const reversal = reversalSelector.value;
+            const dataSource = dataSourceSelector.value;
+            const selectedStock = stockSelector.value;
+            const interval = intervalSelector.value;
+            const timeRange = timeRangeSelector.value;
+            const showFibonacci = fibonacciToggle.checked;
+            const showEMA = emaToggle.checked;
+            const showTrendlines = trendlinesToggle.checked;
+
+            // Controls are already managed by updateDataSourceAndPresets()
+            
+            // Show loading spinner
+            showLoader();
+
+            // Update chart
+            const iframe = document.getElementById('test-chart-iframe');
+            let url;
+
+            if ((dataSource === 'daily' || dataSource === 'intraday') && selectedStock) {
+                // Use real stock data with enhanced features
+                url = `/chart_data/${selectedStock}?box_size=${boxSize}&reversal=${reversal}&interval=${interval}&time_range=${timeRange}&fibonacci=${showFibonacci}&ema=${showEMA}&trendlines=${showTrendlines}`;
+            } else if (dataSource === 'dummy') {
+                // Use dummy pattern data
+                url = `/test_chart_data/${pattern}?box_size=${boxSize}&reversal=${reversal}`;
+            } else {
+                // No valid selection, show message
+                hideLoader();
+                iframe.src = 'about:blank';
+                return;
+            }
+
+            // Set up iframe load event to hide loader
+            iframe.onload = function() {
+                hideLoader();
+            };
+
+            iframe.src = url;
+            
+            // Update pattern information
+            updatePatternInfo(pattern);
+
+            // Update analysis points and trigger information
+            if (dataSource === 'dummy') {
+                updateAnalysisPoints(pattern);
+                updateTriggerPoints(pattern);
+                const realInfo = document.getElementById('real-data-info');
+                const patternPanel = document.getElementById('pattern-analysis');
+                const triggerPanel = document.getElementById('trigger-analysis');
+                if (realInfo) realInfo.style.display = 'none';
+                if (patternPanel) patternPanel.style.display = 'block';
+                if (triggerPanel) triggerPanel.style.display = 'block';
+            } else {
+                updateRealDataInfo(selectedStock);
+                const realInfo = document.getElementById('real-data-info');
+                const patternPanel = document.getElementById('pattern-analysis');
+                const triggerPanel = document.getElementById('trigger-analysis');
+                if (realInfo) realInfo.style.display = 'block';
+                if (patternPanel) patternPanel.style.display = 'none';
+                if (triggerPanel) triggerPanel.style.display = 'none';
+            }
+        }
+
+        function updateAnalysisPoints(pattern) {
+            const analysisList = document.getElementById('analysis-points');
+            const points = patternAnalysis[pattern] || [];
+
+            analysisList.innerHTML = '';
+            points.forEach(point => {
+                const li = document.createElement('li');
+                li.textContent = point;
+                analysisList.appendChild(li);
+            });
+        }
+
+        function updateTriggerPoints(pattern) {
+            const triggerPointsDiv = document.getElementById('trigger-points');
+            const expectations = triggerExpectations[pattern];
+
+            if (expectations) {
+                triggerPointsDiv.innerHTML = `
+                    <h5>🚨 LIVE TRADING ALERT for ${pattern.replace('_', ' ').toUpperCase()}:</h5>
+                    <div class="trigger-expectation">
+                        <p><strong>Expected Alerts:</strong> ${expectations.expected_triggers} (on LATEST column only)</p>
+                        <p><strong>Key Trigger:</strong> ${expectations.key_trigger}</p>
+                        <p><strong>Timing:</strong> ${expectations.timing}</p>
+                        <p><strong>Logic:</strong> ${expectations.logic}</p>
+                    </div>
+                    <div class="trigger-legend">
+                        <p><strong>💰 LIVE TRADING SYSTEM:</strong></p>
+                        <p>⭐ = Alert on LATEST column (actionable NOW)</p>
+                        <p>🟢 = BUY signals | 🔴 = SELL signals</p>
+                        <p>🚨 = Real-time breakout/breakdown alerts</p>
+                        <p><em>Alerts fire only on CURRENT data - perfect for live trading!</em></p>
+                    </div>
+                `;
+            }
+        }
+
+        function showLoader() {
+            const loader = document.getElementById('chart-loader');
+            loader.style.display = 'block';
+        }
+
+        function hideLoader() {
+            const loader = document.getElementById('chart-loader');
+            loader.style.display = 'none';
+        }
+
+        function updatePatternInfo(pattern) {
+            const patternDetailsDiv = document.getElementById('pattern-details');
+            const patternData = {
+                'bullish_breakout': {
+                    name: 'Double Top Buy with Follow Through',
+                    description: 'Price breaks above double top resistance after two failed attempts with strong follow-through momentum',
+                    signal: 'BUY'
+                },
+                'bearish_breakdown': {
+                    name: 'Double Bottom Sell with Follow Through',
+                    description: 'Price breaks below double bottom support after two failed attempts with strong follow-through momentum',
+                    signal: 'SELL'
+                },
+                'triple_top': {
+                    name: 'Triple Top Buy with Follow Through',
+                    description: 'Price breaks above triple top resistance after three failed attempts with strong follow-through momentum',
+                    signal: 'BUY'
+                },
+                'triple_bottom': {
+                    name: 'Triple Bottom Sell with Follow Through',
+                    description: 'Price breaks below triple bottom support after three failed attempts with strong follow-through momentum',
+                    signal: 'SELL'
+                },
+                'quadruple_top': {
+                    name: 'Quadruple Top Buy with Follow Through',
+                    description: 'Price breaks above quadruple top resistance after four failed attempts with ultimate follow-through momentum',
+                    signal: 'BUY'
+                },
+                'quadruple_bottom': {
+                    name: 'Quadruple Bottom Sell with Follow Through',
+                    description: 'Price breaks below quadruple bottom support after four failed attempts with ultimate follow-through momentum',
+                    signal: 'SELL'
+                }
+            };
+
+            const info = patternData[pattern];
+            if (info) {
+                const signalColor = info.signal === 'BUY' ? '#d4edda' : '#f8d7da';
+                const signalTextColor = info.signal === 'BUY' ? '#155724' : '#721c24';
+
+                patternDetailsDiv.innerHTML = `
+                    <div class="pattern-card" style="background: white; padding: 12px; border-radius: 8px; border-left: 4px solid #007bff;">
+                        <h4 style="margin: 0 0 8px 0; color: #007bff;">${info.name}</h4>
+                        <p style="margin: 0 0 6px 0;"><strong>Expected Signal:</strong>
+                            <span style="padding: 2px 8px; border-radius: 4px; font-weight: bold; background: ${signalColor}; color: ${signalTextColor};">
+                                ${info.signal}
+                            </span>
+                        </p>
+                        <p style="margin: 0 0 6px 0; color: #6c757d;"><strong>Description:</strong> ${info.description}</p>
+                        <p style="margin: 0; color: #6c757d; font-size: 0.9em;"><strong>Test Purpose:</strong> Verify that the chart correctly identifies this pattern and generates the expected signal.</p>
+                    </div>
+                `;
+            }
+        }
+
+        function updateRealDataInfo(selectedStock) {
+            const stockDetailsDiv = document.getElementById('stock-details');
+
+            if (selectedStock) {
+                // Find stock info from the watchlist
+                const stockOption = document.querySelector(`#stock-selector option[value="${selectedStock}"]`);
+                const stockName = stockOption ? stockOption.textContent : selectedStock;
+
+                // Get current interval and time range
+                const interval = document.getElementById('interval-selector').value;
+                const timeRange = document.getElementById('time-range-selector').value;
+                const boxSize = document.getElementById('box-size-selector').value;
+                const reversal = document.getElementById('reversal-selector').value;
+                const showFibonacci = document.getElementById('fibonacci-toggle').checked;
+
+                // Format display values
+                const intervalDisplay = interval.replace('minute', 'min').replace('hour', 'hr');
+                const boxSizePercent = (parseFloat(boxSize) * 100).toFixed(2) + '%';
+
+                stockDetailsDiv.innerHTML = `
+                    <div class="stock-info">
+                        <p><strong>📈 Stock:</strong> ${stockName}</p>
+                        <p><strong>🔑 Instrument Key:</strong> ${selectedStock}</p>
+                        <p><strong>⏰ Time Interval:</strong> ${intervalDisplay}</p>
+                        <p><strong>📅 Time Range:</strong> ${timeRange.replace(/(\d+)/, '$1 ').replace(/s$/, '')}</p>
+                        <p><strong>📊 Box Size:</strong> ${boxSizePercent}</p>
+                        <p><strong>🔄 Reversal:</strong> ${reversal} Box</p>
+                        <p><strong>📈 Fibonacci Levels:</strong> ${showFibonacci ? '✅ Enabled' : '❌ Disabled'}</p>
+                        <p><strong>🔍 Analysis Mode:</strong> Real Market Data</p>
+                        <p><strong>⚡ Pattern Detection:</strong> Active</p>
+                        <p><strong>🎯 Alert System:</strong> Enabled for pattern completion</p>
+                    </div>
+                `;
+            } else {
+                stockDetailsDiv.innerHTML = '<p>Please select a stock to analyze</p>';
+            }
+        }
+
+        // Initial chart load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check for query parameters from alert navigation
+            const urlParams = new URLSearchParams(window.location.search);
+            const symbol = urlParams.get('symbol');
+            const instrumentKey = urlParams.get('instrument_key');
+            const pattern = urlParams.get('pattern');
+            const boxSize = urlParams.get('box_size');
+            const interval = urlParams.get('interval');
+            const timeRange = urlParams.get('time_range');
+
+            // Auto-select values from query params if present
+            if (pattern) {
+                const patternSelector = document.getElementById('pattern-selector');
+                if (patternSelector) {
+                    // Try to match alert pattern_type to test pattern key
+                    // Accept exact match, contains, or normalized (remove underscores) match
+                    for (let option of patternSelector.options) {
+                        const opt = option.value;
+                        if (
+                            opt === pattern ||
+                            (pattern && pattern.includes(opt)) ||
+                            (opt && opt.includes(pattern)) ||
+                            opt.replace(/_/g,'') === (pattern || '').replace(/_/g,'')
+                        ) {
+                            patternSelector.value = opt;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (boxSize) {
+                const boxSizeSelector = document.getElementById('box-size-selector');
+                if (boxSizeSelector) {
+                    // Force 0.25% from alerts as per preference
+                    boxSizeSelector.value = '0.0025';
+                }
+            }
+
+            if (interval) {
+                const intervalSelector = document.getElementById('interval-selector');
+                if (intervalSelector) {
+                    intervalSelector.value = interval;
+                }
+            }
+
+            // If coming from alert, switch to real stock data
+            if (symbol) {
+                console.log('Alert navigation detected - Symbol:', symbol);
+                console.log('Pattern:', pattern);
+                console.log('Box Size:', boxSize);
+                console.log('Interval:', interval);
+
+                const dataSourceSelector = document.getElementById('data-source-selector');
+                if (dataSourceSelector) {
+                    // Switch to intraday mode for alert-based navigation
+                    dataSourceSelector.value = 'intraday';
+
+                    // Show real data controls
+                    showRealDataControls();
+
+                    // Enforce 0.25% box size on alert navigation
+                    const boxSizeSelector = document.getElementById('box-size-selector');
+                    if (boxSizeSelector) boxSizeSelector.value = '0.0025';
+
+                    // Set interval from URL or default to 1minute
+                    const intervalSelector = document.getElementById('interval-selector');
+                    if (intervalSelector) intervalSelector.value = interval || '1minute';
+
+                    // Set time range if provided, else 2 months
+                    const timeRangeSelector = document.getElementById('time-range-selector');
+                    if (timeRangeSelector) timeRangeSelector.value = timeRange || '2months';
+
+                    // Select the stock - prefer symbol match, fallback to instrument_key if provided
+                    const stockSelector = document.getElementById('stock-selector');
+                    if (stockSelector) {
+                        let found = false;
+                        if (symbol) {
+                            for (let option of stockSelector.options) {
+                                const optionText = option.textContent || option.innerText;
+                                if (optionText.includes(`(${symbol})`)) {
+                                    stockSelector.value = option.value;
+                                    found = true;
+                                    console.log('Stock found and selected by symbol:', option.value);
+                                    break;
+                                }
+                            }
+                        }
+                        if (!found && instrumentKey) {
+                            for (let option of stockSelector.options) {
+                                if (option.value === instrumentKey) {
+                                    stockSelector.value = instrumentKey;
+                                    found = true;
+                                    console.log('Stock selected by instrument_key:', instrumentKey);
+                                    break;
+                                }
+                            }
+                        }
+                        if (!found) {
+                            console.warn('Stock not found in selector via symbol or instrument_key:', symbol, instrumentKey);
+                        }
+                    }
+                }
+            }
+
+            updateTestChart();
+
+            // Initialize analysis points and trigger information
+            const patternSelector = document.getElementById('pattern-selector');
+            updateAnalysisPoints(patternSelector.value);
+            updateTriggerPoints(patternSelector.value);
+
+            // Initialize data source selector behavior
+            const dataSourceSelector = document.getElementById('data-source-selector');
+            dataSourceSelector.addEventListener('change', function() {
+                updateTestChart();
+            });
+        });
+    </script>
+</body>
+</html>
