@@ -509,6 +509,38 @@ async def update_settings(settings: models.Settings):
     crud.save_settings(settings)
     return {"status": "success"}
 
+@api_router.post("/update-dhan-token")
+async def update_dhan_token(request: Request):
+    """
+    Update Dhan access token directly via API.
+    Accepts JSON body with 'token' field.
+    """
+    try:
+        body = await request.json()
+        token = body.get("token", "").strip()
+
+        if not token:
+            return {"status": "error", "message": "Token is required"}
+
+        # Validate token format (basic check - should start with eyJ)
+        if not token.startswith("eyJ"):
+            return {"status": "error", "message": "Invalid token format. Token should start with 'eyJ'"}
+
+        # Update the token in .env file and Redis
+        crud.update_env_file("DHAN_ACCESS_TOKEN", token)
+
+        # Also update in Redis settings
+        if crud.redis_client:
+            crud.redis_client.hset("settings", "dhan_access_token", token)
+
+        return {
+            "status": "success",
+            "message": "Dhan access token updated successfully",
+            "token_preview": token[:20] + "..." + token[-10:]
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to update token: {str(e)}"}
+
 async def populate_all_stocks_background():
     """Background function to populate data for all watchlist stocks."""
     try:
