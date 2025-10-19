@@ -107,13 +107,6 @@ async def authentication_redirect_handler(request: Request, exc: AuthenticationR
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
-# Create default admin user on startup
-@app.on_event("startup")
-async def startup_event():
-    """Run startup tasks."""
-    create_default_admin_user()
-    logger.info("✅ Application startup complete")
-
 # Background task status tracking
 data_population_status = {}
 
@@ -153,8 +146,10 @@ def populate_stock_data_background(instrument_key: str, symbol: str):
         }
         logger.error(f"❌ Background data population failed for {symbol}: {e}")
 
+# Create default admin user and run startup tasks
 @app.on_event("startup")
 def startup_event():
+    """Run all startup tasks."""
     # Run pattern tests before starting application
     print("\n" + "=" * 60)
     print("🚀 STARTING APPLICATION WITH PATTERN VALIDATION")
@@ -172,6 +167,10 @@ def startup_event():
         print("✅ Application ready for use")
 
     print("=" * 60)
+
+    # Create default admin user if no users exist
+    create_default_admin_user()
+    logger.info("✅ Application startup complete")
 
     # MongoDB is used for all data storage - no SQLite tables needed
     # Start the appropriate scheduler (parallel or sequential)
