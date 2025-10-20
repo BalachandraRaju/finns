@@ -13,7 +13,7 @@ from logzero import logger
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from app.db import SessionLocal
+# No longer need SessionLocal - using MongoDB via crud
 from app import crud
 
 class FOStocksLoader:
