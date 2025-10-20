@@ -459,7 +459,60 @@ class DatabaseService:
 
         except Exception as e:
             logger.error(f"❌ Error during backfill: {e}")
-    
+
+    def save_candle(self, instrument_key: str, interval: str, candle: Dict) -> bool:
+        """
+        Save a single candle to MongoDB database.
+
+        Args:
+            instrument_key: Instrument key (e.g., DHAN_2885)
+            interval: Candle interval (e.g., '1minute', 'day')
+            candle: Candle data dictionary with keys: timestamp, open, high, low, close, volume
+
+        Returns:
+            True if saved successfully, False otherwise
+        """
+        try:
+            # Check if candle already exists
+            existing = candles_collection.find_one({
+                "instrument_key": instrument_key,
+                "interval": interval,
+                "timestamp": candle['timestamp']
+            })
+
+            if existing:
+                # Update existing candle
+                candles_collection.update_one(
+                    {"_id": existing["_id"]},
+                    {"$set": {
+                        "open": candle.get('open', 0),
+                        "high": candle.get('high', 0),
+                        "low": candle.get('low', 0),
+                        "close": candle.get('close', 0),
+                        "volume": candle.get('volume', 0),
+                        "oi": candle.get('oi', 0)
+                    }}
+                )
+            else:
+                # Insert new candle
+                candles_collection.insert_one({
+                    "instrument_key": instrument_key,
+                    "interval": interval,
+                    "timestamp": candle['timestamp'],
+                    "open": candle.get('open', 0),
+                    "high": candle.get('high', 0),
+                    "low": candle.get('low', 0),
+                    "close": candle.get('close', 0),
+                    "volume": candle.get('volume', 0),
+                    "oi": candle.get('oi', 0)
+                })
+
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Error saving candle: {e}")
+            return False
+
     def _aggregate_to_3minute(self, candles_1min: List[Dict]) -> List[Dict]:
         """Aggregate 1-minute candles to 3-minute candles."""
         try:
