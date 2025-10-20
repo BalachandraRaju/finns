@@ -14,9 +14,8 @@ import time
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from app.db import SessionLocal
-from app.models import Candle, DataSyncStatus
-from sqlalchemy import and_
+# Use MongoDB instead of SQLAlchemy
+from app.mongo_service import candles_collection, data_sync_status_collection
 
 # Import Dhan clients
 sys.path.insert(0, os.path.join(project_root, 'data-fetch'))
@@ -80,23 +79,22 @@ class DhanBackfillService:
             datetime: Timestamp of the last candle for this specific stock, or None if no data exists
         """
         try:
-            db = SessionLocal()
             # Query filters by BOTH instrument_key AND interval
             # This ensures each stock tracks its own last timestamp independently
-            last_candle = db.query(Candle).filter(
-                Candle.instrument_key == instrument_key,  # Individual stock level
-                Candle.interval == interval
-            ).order_by(Candle.timestamp.desc()).first()
+            last_candle = candles_collection.find_one(
+                {
+                    "instrument_key": instrument_key,  # Individual stock level
+                    "interval": interval
+                },
+                sort=[("timestamp", -1)]
+            )
 
             if last_candle:
-                return last_candle.timestamp
+                return last_candle['timestamp']
             return None
         except Exception as e:
             logger.error(f"❌ Error getting last candle timestamp: {e}")
             return None
-        finally:
-            if db:
-                db.close()
 
     def backfill_stock(
         self,
@@ -190,55 +188,58 @@ class DhanBackfillService:
         interval: str
     ) -> int:
         """
-        Store candles in PostgreSQL database.
-        
+        Store candles in MongoDB database.
+
         Args:
             symbol: Stock symbol
             security_id: Dhan security ID
             candles: List of candle dictionaries
             interval: Candle interval
-            
+
         Returns:
             Number of records stored
         """
         try:
-            db = SessionLocal()
             records_stored = 0
-            
+
             # Use security_id as instrument_key for Dhan data
             instrument_key = f"DHAN_{security_id}"
-            
+
             for candle_data in candles:
                 try:
                     # Check if candle already exists
-                    existing = db.query(Candle).filter(
-                        Candle.instrument_key == instrument_key,
-                        Candle.interval == interval,
-                        Candle.timestamp == candle_data['timestamp']
-                    ).first()
+                    existing = candles_collection.find_one({
+                        "instrument_key": instrument_key,
+                        "interval": interval,
+                        "timestamp": candle_data['timestamp']
+                    })
 
                     if existing:
                         # Update existing candle
-                        existing.open = candle_data['open']
-                        existing.high = candle_data['high']
-                        existing.low = candle_data['low']
-                        existing.close = candle_data['close']
-                        existing.volume = candle_data['volume']
-                        existing.oi = 0
+                        candles_collection.update_one(
+                            {"_id": existing["_id"]},
+                            {"$set": {
+                                "open": candle_data['open'],
+                                "high": candle_data['high'],
+                                "low": candle_data['low'],
+                                "close": candle_data['close'],
+                                "volume": candle_data['volume'],
+                                "oi": 0
+                            }}
+                        )
                     else:
                         # Insert new candle
-                        candle = Candle(
-                            instrument_key=instrument_key,
-                            interval=interval,
-                            timestamp=candle_data['timestamp'],
-                            open=candle_data['open'],
-                            high=candle_data['high'],
-                            low=candle_data['low'],
-                            close=candle_data['close'],
-                            volume=candle_data['volume'],
-                            oi=0  # No OI for equity
-                        )
-                        db.add(candle)
+                        candles_collection.insert_one({
+                            "instrument_key": instrument_key,
+                            "interval": interval,
+                            "timestamp": candle_data['timestamp'],
+                            "open": candle_data['open'],
+                            "high": candle_data['high'],
+                            "low": candle_data['low'],
+                            "close": candle_data['close'],
+                            "volume": candle_data['volume'],
+                            "oi": 0  # No OI for equity
+                        })
 
                     records_stored += 1
 
@@ -246,18 +247,12 @@ class DhanBackfillService:
                     logger.debug(f"Skipping duplicate or invalid candle: {e}")
                     continue
 
-            db.commit()
-            logger.info(f"   💾 Committed {records_stored} new/updated records to database")
+            logger.info(f"   💾 Stored {records_stored} new/updated records to database")
             return records_stored
-            
+
         except Exception as e:
             logger.error(f"❌ Error storing candles for {symbol}: {e}")
-            if db:
-                db.rollback()
             return 0
-        finally:
-            if db:
-                db.close()
     
     def _update_sync_status(
         self,
@@ -269,40 +264,33 @@ class DhanBackfillService:
     ):
         """Update data sync status in database."""
         try:
-            db = SessionLocal()
-            
-            sync_status = db.query(DataSyncStatus).filter(
-                and_(
-                    DataSyncStatus.symbol == symbol,
-                    DataSyncStatus.data_type == data_type
-                )
-            ).first()
-            
+            sync_status = data_sync_status_collection.find_one({
+                "symbol": symbol,
+                "data_type": data_type
+            })
+
             if sync_status:
-                sync_status.last_sync = datetime.now()
-                sync_status.sync_status = status
-                sync_status.records_synced = records_synced
-                sync_status.error_message = error_message
-            else:
-                sync_status = DataSyncStatus(
-                    symbol=symbol,
-                    data_type=data_type,
-                    last_sync=datetime.now(),
-                    sync_status=status,
-                    records_synced=records_synced,
-                    error_message=error_message
+                data_sync_status_collection.update_one(
+                    {"_id": sync_status["_id"]},
+                    {"$set": {
+                        "last_sync": datetime.now(),
+                        "sync_status": status,
+                        "records_synced": records_synced,
+                        "error_message": error_message
+                    }}
                 )
-                db.add(sync_status)
-            
-            db.commit()
-            
+            else:
+                data_sync_status_collection.insert_one({
+                    "symbol": symbol,
+                    "data_type": data_type,
+                    "last_sync": datetime.now(),
+                    "sync_status": status,
+                    "records_synced": records_synced,
+                    "error_message": error_message
+                })
+
         except Exception as e:
             logger.error(f"❌ Error updating sync status: {e}")
-            if db:
-                db.rollback()
-        finally:
-            if db:
-                db.close()
     
     def backfill_all_stocks(
         self,

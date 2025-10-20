@@ -14,8 +14,8 @@ from logzero import logger
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-from app.db import SessionLocal
-from app.models import Candle, LTPData
+# Use MongoDB instead of SQLAlchemy
+from app.mongo_service import candles_collection, ltp_data_collection
 from app import crud
 
 # Import data collection services
@@ -120,50 +120,48 @@ class DatabaseService:
     def get_latest_ltp(self, symbol: str, auto_collect: bool = True) -> Optional[float]:
         """
         Get latest LTP for a symbol with automatic collection if stale.
-        
+
         Args:
             symbol: Stock symbol
             auto_collect: Whether to automatically collect fresh LTP if stale
-            
+
         Returns:
             Latest LTP price or None
         """
         try:
             # Check database for recent LTP
-            db = SessionLocal()
-            
             # Get LTP from last 5 minutes
             cutoff_time = datetime.now() - timedelta(minutes=5)
-            
-            latest_ltp = db.query(LTPData).filter(
-                LTPData.symbol == symbol,
-                LTPData.timestamp >= cutoff_time
-            ).order_by(LTPData.timestamp.desc()).first()
-            
+
+            latest_ltp = ltp_data_collection.find_one(
+                {
+                    "symbol": symbol,
+                    "timestamp": {"$gte": cutoff_time}
+                },
+                sort=[("timestamp", -1)]
+            )
+
             if latest_ltp:
-                logger.info(f"📈 Found recent LTP for {symbol}: ₹{latest_ltp.ltp}")
-                return latest_ltp.ltp
-            
+                logger.info(f"📈 Found recent LTP for {symbol}: ₹{latest_ltp['ltp']}")
+                return latest_ltp['ltp']
+
             # If no recent data and auto_collect is enabled
             if auto_collect:
                 logger.info(f"🔄 No recent LTP for {symbol}, triggering collection...")
-                
+
                 # Trigger LTP collection
                 ltp_data = self.ltp_service.collect_ltp_data()
-                
+
                 if symbol in ltp_data:
                     logger.info(f"✅ Collected fresh LTP for {symbol}: ₹{ltp_data[symbol]}")
                     return ltp_data[symbol]
-            
+
             logger.warning(f"⚠️ No LTP data available for {symbol}")
             return None
-            
+
         except Exception as e:
             logger.error(f"❌ Error getting LTP for {symbol}: {e}")
             return None
-        finally:
-            if 'db' in locals():
-                db.close()
     
     def get_intraday_candles_smart(self, instrument_key: str, interval: str = "1minute") -> List[Dict]:
         """
@@ -227,43 +225,42 @@ class DatabaseService:
             logger.error(f"❌ Error getting historical candles for {instrument_key}: {e}")
             return []
     
-    def _get_candles_from_db(self, instrument_key: str, interval: str, 
+    def _get_candles_from_db(self, instrument_key: str, interval: str,
                            start_date: date, end_date: date) -> List[Dict]:
         """Get candles from database."""
         try:
-            db = SessionLocal()
-            
             start_datetime = datetime.combine(start_date, datetime.min.time())
             end_datetime = datetime.combine(end_date, datetime.max.time())
-            
-            candles = db.query(Candle).filter(
-                Candle.instrument_key == instrument_key,
-                Candle.interval == interval,
-                Candle.timestamp >= start_datetime,
-                Candle.timestamp <= end_datetime
-            ).order_by(Candle.timestamp).all()
-            
+
+            candles = candles_collection.find(
+                {
+                    "instrument_key": instrument_key,
+                    "interval": interval,
+                    "timestamp": {
+                        "$gte": start_datetime,
+                        "$lte": end_datetime
+                    }
+                }
+            ).sort("timestamp", 1)
+
             # Convert to dictionary format
             candle_dicts = []
             for candle in candles:
                 candle_dicts.append({
-                    'timestamp': candle.timestamp,
-                    'open': candle.open,
-                    'high': candle.high,
-                    'low': candle.low,
-                    'close': candle.close,
-                    'volume': candle.volume,
-                    'oi': candle.oi
+                    'timestamp': candle['timestamp'],
+                    'open': candle['open'],
+                    'high': candle['high'],
+                    'low': candle['low'],
+                    'close': candle['close'],
+                    'volume': candle.get('volume', 0),
+                    'oi': candle.get('oi', 0)
                 })
-            
+
             return candle_dicts
-            
+
         except Exception as e:
             logger.error(f"❌ Error getting candles from DB: {e}")
             return []
-        finally:
-            if 'db' in locals():
-                db.close()
     
     def _detect_missing_candle_ranges(self, candles: List[Dict], interval: str, 
                                     start_date: date, end_date: date) -> List[Tuple[date, date]]:
