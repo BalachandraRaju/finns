@@ -1008,8 +1008,15 @@ def fetch_intraday_data(instrument_key: str, interval: str):
         logger.warning(f"Could not fetch current intraday data for {instrument_key} ({interval}). This can be normal outside market hours. Error: {e}")
 
 def fetch_and_save_api_data(instrument_key: str, interval: str, from_date: datetime.date, to_date: datetime.date):
-    """Fetches historical data from the Upstox API and saves it."""
+    """Fetches historical data from the appropriate API (Dhan or Upstox) and saves it."""
     logger.info(f"Fetching from API for {instrument_key} from {from_date} to {to_date}...")
+
+    # Check if this is a Dhan instrument key
+    if instrument_key.startswith('DHAN_'):
+        logger.info(f"⚠️ Dhan instrument key detected: {instrument_key}")
+        logger.info(f"⚠️ Dhan data should be fetched via database_service auto-backfill, not this legacy function")
+        logger.info(f"⚠️ Skipping Upstox API call for Dhan instrument")
+        return
 
     api_instance = upstox_client.HistoryApi(api_client)
 
