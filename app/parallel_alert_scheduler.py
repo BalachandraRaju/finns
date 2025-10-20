@@ -214,17 +214,19 @@ def filter_duplicate_alerts(symbol: str, alerts: List[Dict]) -> List[Dict]:
     
     new_alerts = []
     settings = crud.get_settings()
-    
+
     for alert in alerts:
         pattern_type = alert.get('pattern_type', 'unknown')
         signal_price = alert.get('signal_price', 0)
         is_super_alert = alert.get('is_super_alert', False)
-        
+
         # Check user settings
         if not settings.get('enable_pattern_alerts', True):
+            logger.debug(f"❌ {symbol}: Pattern alerts disabled in settings")
             continue
-        
+
         if settings.get('enable_super_alerts_only', False) and not is_super_alert:
+            logger.debug(f"❌ {symbol}: Super alerts only mode - skipping non-super alert {pattern_type}")
             continue
         
         # Check pattern-specific settings
@@ -239,21 +241,24 @@ def filter_duplicate_alerts(symbol: str, alerts: List[Dict]) -> List[Dict]:
             pattern_enabled = settings.get('enable_pole_patterns', True)
         elif 'catapult' in pattern_type:
             pattern_enabled = settings.get('enable_catapult_patterns', True)
-        
+
         if not pattern_enabled:
+            logger.debug(f"❌ {symbol}: Pattern {pattern_type} disabled in settings")
             continue
         
         # Check for duplicates in Redis
         redis_key = f"pattern_alert:{symbol}:{pattern_type}"
         last_alert_price = redis_client.get(redis_key)
-        
+
         if last_alert_price:
             last_price = float(last_alert_price)
             price_diff_pct = abs(signal_price - last_price) / last_price * 100
             if price_diff_pct < 0.5:
+                logger.debug(f"❌ {symbol}: Duplicate alert {pattern_type} - price diff {price_diff_pct:.2f}% < 0.5%")
                 continue  # Skip duplicate
-        
+
         # This is a new alert
+        logger.info(f"✅ {symbol}: NEW alert {pattern_type} @ ₹{signal_price}")
         new_alerts.append(alert)
 
         # Mark as sent in Redis with 24-hour expiration
