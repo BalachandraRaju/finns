@@ -686,6 +686,11 @@ async def alerts_analytics_page(request: Request, current_user: User = Depends(g
     """Trading alerts analytics page."""
     return templates.TemplateResponse("alerts_analytics.html", {"request": request, "user": current_user})
 
+@app.get("/pattern-validation", response_class=HTMLResponse)
+async def pattern_validation_page(request: Request, current_user: User = Depends(get_current_user_from_session)):
+    """Pattern validation dashboard page."""
+    return templates.TemplateResponse("pattern_validation.html", {"request": request, "user": current_user})
+
 @api_router.post("/pnf-matrix")
 async def calculate_pnf_matrix(request: Request):
     """Calculate PnF Matrix for all stocks in watchlist."""
@@ -1036,5 +1041,192 @@ def _backfill_today_worker():
     except Exception as e:
         logger.error(f"Error in backfill-today worker: {e}")
 
+# --- Pattern Validation API Routes ---
+
+@api_router.get("/pattern-validation/alerts")
+async def get_validation_alerts(
+    symbol: Optional[str] = None,
+    alert_type: Optional[str] = None,
+    pattern_type: Optional[str] = None,
+    is_super_alert: Optional[bool] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    outcome: Optional[str] = None,
+    validation_status: Optional[str] = None,
+    environment: Optional[str] = None,
+    fibonacci_level: Optional[str] = None,
+    limit: Optional[int] = 100,
+    offset: Optional[int] = 0,
+    current_user: User = Depends(get_current_user_from_session)
+):
+    """Get alerts with enhanced filtering for validation dashboard."""
+    try:
+        # Convert empty strings to None
+        symbol = symbol if symbol else None
+        alert_type = alert_type if alert_type else None
+        pattern_type = pattern_type if pattern_type else None
+        outcome = outcome if outcome else None
+        validation_status = validation_status if validation_status else None
+        environment = environment if environment else None
+        fibonacci_level = fibonacci_level if fibonacci_level else None
+        start_date = start_date if start_date else None
+        end_date = end_date if end_date else None
+
+        filters = models.AlertFilters(
+            symbol=symbol,
+            alert_type=alert_type,
+            pattern_type=pattern_type,
+            is_super_alert=is_super_alert,
+            start_date=start_date,
+            end_date=end_date,
+            outcome=outcome,
+            validation_status=validation_status,
+            environment=environment,
+            fibonacci_level=fibonacci_level,
+            limit=limit,
+            offset=offset
+        )
+
+        alerts = crud.get_alerts_with_filters(filters)
+        total_count = crud.get_alerts_count_with_filters(filters)
+
+        return {
+            "status": "success",
+            "alerts": alerts,
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset
+        }
+    except Exception as e:
+        logger.error(f"Error fetching validation alerts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.put("/pattern-validation/alerts/{alert_id}/validate")
+async def validate_alert(
+    alert_id: str,
+    validation_data: models.AlertValidationUpdate,
+    current_user: User = Depends(get_current_user_from_session)
+):
+    """Update alert validation status."""
+    try:
+        success = crud.update_alert_validation(
+            alert_id,
+            validation_data.validation_status,
+            validation_data.notes,
+            current_user.email
+        )
+
+        if success:
+            return {"status": "success", "message": "Alert validation updated successfully"}
+        else:
+            raise HTTPException(status_code=404, detail="Alert not found")
+    except Exception as e:
+        logger.error(f"Error updating alert validation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/pattern-validation/analytics")
+async def get_pattern_analytics(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    environment: Optional[str] = None,
+    current_user: User = Depends(get_current_user_from_session)
+):
+    """Get pattern performance analytics."""
+    try:
+        analytics = crud.get_pattern_analytics(start_date, end_date, environment)
+        return {"status": "success", "analytics": analytics}
+    except Exception as e:
+        logger.error(f"Error fetching pattern analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/pattern-validation/summary/{date}")
+async def get_daily_summary(
+    date: str,
+    current_user: User = Depends(get_current_user_from_session)
+):
+    """Get daily pattern summary for specified date."""
+    try:
+        summary = crud.get_daily_pattern_summary(date)
+        return {"status": "success", "summary": summary}
+    except Exception as e:
+        logger.error(f"Error fetching daily summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/pattern-validation/cache/clear")
+async def clear_validation_cache(
+    current_user: User = Depends(get_current_user_from_session)
+):
+    """Clear pattern validation cache."""
+    try:
+        deleted_count = crud.clear_pattern_validation_cache()
+        return {"status": "success", "message": f"Cleared {deleted_count} cache entries"}
+    except Exception as e:
+        logger.error(f"Error clearing validation cache: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/pattern-validation/alerts/export")
+async def export_alerts_csv(
+    symbol: Optional[str] = None,
+    alert_type: Optional[str] = None,
+    pattern_type: Optional[str] = None,
+    is_super_alert: Optional[bool] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    outcome: Optional[str] = None,
+    validation_status: Optional[str] = None,
+    environment: Optional[str] = None,
+    fibonacci_level: Optional[str] = None,
+    current_user: User = Depends(get_current_user_from_session)
+):
+    """Export alerts to CSV format."""
+    try:
+        # Convert empty strings to None
+        symbol = symbol if symbol else None
+        alert_type = alert_type if alert_type else None
+        pattern_type = pattern_type if pattern_type else None
+        outcome = outcome if outcome else None
+        validation_status = validation_status if validation_status else None
+        environment = environment if environment else None
+        fibonacci_level = fibonacci_level if fibonacci_level else None
+        start_date = start_date if start_date else None
+        end_date = end_date if end_date else None
+
+        filters = models.AlertFilters(
+            symbol=symbol,
+            alert_type=alert_type,
+            pattern_type=pattern_type,
+            is_super_alert=is_super_alert,
+            start_date=start_date,
+            end_date=end_date,
+            outcome=outcome,
+            validation_status=validation_status,
+            environment=environment,
+            fibonacci_level=fibonacci_level,
+            limit=10000,  # Large limit for export
+            offset=0
+        )
+
+        csv_content = crud.export_alerts_to_csv(filters)
+
+        from fastapi.responses import Response
+        return Response(
+            content=csv_content,
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=pattern_alerts.csv"}
+        )
+    except Exception as e:
+        logger.error(f"Error exporting alerts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 app.include_router(api_router)
+
+# Initialize pattern validation database indexes on startup
+@app.on_event("startup")
+async def startup_event():
+    """Initialize application on startup."""
+    try:
+        # Ensure database indexes for pattern validation
+        crud.ensure_pattern_validation_indexes()
+        logger.info("🚀 Pattern validation system initialized successfully")
+    except Exception as e:
+        logger.error(f"❌ Error during startup initialization: {e}")
