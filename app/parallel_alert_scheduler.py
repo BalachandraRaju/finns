@@ -255,9 +255,10 @@ def filter_duplicate_alerts(symbol: str, alerts: List[Dict]) -> List[Dict]:
         
         # This is a new alert
         new_alerts.append(alert)
-        
-        # Mark as sent in Redis
-        redis_client.set(redis_key, signal_price)
+
+        # Mark as sent in Redis with 24-hour expiration
+        # This allows the same pattern to trigger again after 24 hours
+        redis_client.setex(redis_key, 86400, signal_price)  # 86400 seconds = 24 hours
     
     return new_alerts
 
