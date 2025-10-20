@@ -12,11 +12,10 @@ sys.path.insert(0, project_root)
 
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime, timedelta, date
-from sqlalchemy.orm import Session
 from logzero import logger
 
-from app.db import SessionLocal
-from app.models import Candle, DataSyncStatus
+# Use MongoDB instead of SQLAlchemy
+from app.mongo_service import candles_collection, data_sync_status_collection
 from app import crud
 
 # Import Upstox client for historical data (working API)

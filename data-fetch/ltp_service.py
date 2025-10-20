@@ -15,8 +15,8 @@ from datetime import datetime, timedelta
 from logzero import logger
 import time
 
-from app.db import SessionLocal
-from app.models import LTPData, DataSyncStatus
+# Use MongoDB instead of SQLAlchemy
+from app.mongo_service import ltp_data_collection, data_sync_status_collection
 from app import crud
 
 # Import Upstox LTP client and F&O stocks loader
@@ -143,9 +143,8 @@ class LTPService:
             return False
     
     def _store_ltp_data(self, ltp_data: Dict[str, Dict]) -> None:
-        """Store LTP data in database."""
+        """Store LTP data in MongoDB database."""
         try:
-            db = SessionLocal()
             current_time = datetime.now()
 
             for symbol, data in ltp_data.items():
@@ -162,127 +161,117 @@ class LTPService:
                         instrument_key = stock['instrument_key']
                         break
 
-                # Create LTP record
-                ltp_record = LTPData(
-                    symbol=symbol,
-                    instrument_key=instrument_key,
-                    ltp=float(ltp_price),
-                    timestamp=current_time,
-                    volume=int(data.get('volume', 0)),
-                    change=float(data.get('change', 0.0)),
-                    change_percent=float(data.get('change_percent', 0.0))
-                )
-                db.add(ltp_record)
-                
+                # Create/Update LTP record
+                ltp_data_collection.insert_one({
+                    "symbol": symbol,
+                    "instrument_key": instrument_key,
+                    "ltp": float(ltp_price),
+                    "timestamp": current_time,
+                    "volume": int(data.get('volume', 0)),
+                    "change": float(data.get('change', 0.0)),
+                    "change_percent": float(data.get('change_percent', 0.0))
+                })
+
                 # Update sync status
-                sync_status = db.query(DataSyncStatus).filter(
-                    DataSyncStatus.symbol == symbol,
-                    DataSyncStatus.data_type == 'ltp'
-                ).first()
-                
+                sync_status = data_sync_status_collection.find_one({
+                    "symbol": symbol,
+                    "data_type": 'ltp'
+                })
+
                 if sync_status:
-                    sync_status.last_sync = current_time
-                    sync_status.sync_status = 'success'
-                    sync_status.records_synced = 1
-                    sync_status.error_message = None
-                else:
-                    sync_status = DataSyncStatus(
-                        symbol=symbol,
-                        data_type='ltp',
-                        last_sync=current_time,
-                        sync_status='success',
-                        records_synced=1
+                    data_sync_status_collection.update_one(
+                        {"_id": sync_status["_id"]},
+                        {"$set": {
+                            "last_sync": current_time,
+                            "sync_status": 'success',
+                            "records_synced": 1,
+                            "error_message": None
+                        }}
                     )
-                    db.add(sync_status)
-            
-            db.commit()
+                else:
+                    data_sync_status_collection.insert_one({
+                        "symbol": symbol,
+                        "data_type": 'ltp',
+                        "last_sync": current_time,
+                        "sync_status": 'success',
+                        "records_synced": 1
+                    })
+
             logger.info(f"💾 Stored LTP data for {len(ltp_data)} symbols in database")
-            
+
         except Exception as e:
             logger.error(f"❌ Error storing LTP data: {e}")
-            if db:
-                db.rollback()
-        finally:
-            if db:
-                db.close()
     
     def get_latest_ltp(self, symbol: str) -> Optional[float]:
-        """Get latest LTP for a symbol from database."""
+        """Get latest LTP for a symbol from MongoDB database."""
         try:
-            db = SessionLocal()
-            
             # Convert to AngelOne symbol format
             angelone_symbol = self._convert_to_angelone_symbol(symbol)
             if not angelone_symbol:
                 return None
-            
-            latest_ltp = db.query(LTPData).filter(
-                LTPData.symbol == angelone_symbol
-            ).order_by(LTPData.timestamp.desc()).first()
-            
+
+            latest_ltp = ltp_data_collection.find_one(
+                {"symbol": angelone_symbol},
+                sort=[("timestamp", -1)]
+            )
+
             if latest_ltp:
-                return latest_ltp.ltp
+                return latest_ltp['ltp']
             return None
-            
+
         except Exception as e:
             logger.error(f"❌ Error getting latest LTP for {symbol}: {e}")
             return None
-        finally:
-            if db:
-                db.close()
-    
+
     def get_ltp_history(self, symbol: str, hours: int = 24) -> List[Dict]:
         """Get LTP history for a symbol."""
         try:
-            db = SessionLocal()
-            
             # Convert to AngelOne symbol format
             angelone_symbol = self._convert_to_angelone_symbol(symbol)
             if not angelone_symbol:
                 return []
-            
+
             since_time = datetime.now() - timedelta(hours=hours)
-            
-            ltp_records = db.query(LTPData).filter(
-                LTPData.symbol == angelone_symbol,
-                LTPData.timestamp >= since_time
-            ).order_by(LTPData.timestamp.desc()).all()
-            
+
+            ltp_records = ltp_data_collection.find(
+                {
+                    "symbol": angelone_symbol,
+                    "timestamp": {"$gte": since_time}
+                },
+                sort=[("timestamp", -1)]
+            )
+
             return [
                 {
-                    'timestamp': record.timestamp.isoformat(),
-                    'ltp': record.ltp,
-                    'symbol': record.symbol
+                    'timestamp': record['timestamp'].isoformat(),
+                    'ltp': record['ltp'],
+                    'symbol': record['symbol']
                 }
                 for record in ltp_records
             ]
-            
+
         except Exception as e:
             logger.error(f"❌ Error getting LTP history for {symbol}: {e}")
             return []
-        finally:
-            if db:
-                db.close()
     
     def check_data_freshness(self) -> Dict[str, Dict]:
         """Check freshness of LTP data for all symbols."""
         try:
-            db = SessionLocal()
             symbols = self.get_watchlist_symbols()
             freshness_report = {}
-            
+
             for symbol in symbols:
-                sync_status = db.query(DataSyncStatus).filter(
-                    DataSyncStatus.symbol == symbol,
-                    DataSyncStatus.data_type == 'ltp'
-                ).first()
-                
+                sync_status = data_sync_status_collection.find_one({
+                    "symbol": symbol,
+                    "data_type": 'ltp'
+                })
+
                 if sync_status:
-                    time_since_sync = datetime.now() - sync_status.last_sync
+                    time_since_sync = datetime.now() - sync_status['last_sync']
                     freshness_report[symbol] = {
-                        'last_sync': sync_status.last_sync.isoformat(),
+                        'last_sync': sync_status['last_sync'].isoformat(),
                         'minutes_ago': int(time_since_sync.total_seconds() / 60),
-                        'status': sync_status.sync_status,
+                        'status': sync_status['sync_status'],
                         'is_stale': time_since_sync > timedelta(minutes=5)  # Consider stale after 5 minutes
                     }
                 else:
@@ -292,15 +281,12 @@ class LTPService:
                         'status': 'never_synced',
                         'is_stale': True
                     }
-            
+
             return freshness_report
-            
+
         except Exception as e:
             logger.error(f"❌ Error checking data freshness: {e}")
             return {}
-        finally:
-            if db:
-                db.close()
     
     def test_angelone_connection(self) -> bool:
         """Test AngelOne API connection."""
