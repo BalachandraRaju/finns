@@ -988,6 +988,13 @@ def fetch_intraday_data(instrument_key: str, interval: str):
     if interval not in ["1minute", "30minute"]:
         return
 
+    # Check if this is a Dhan instrument key
+    if instrument_key.startswith('DHAN_'):
+        logger.info(f"⚠️ Dhan instrument key detected: {instrument_key}")
+        logger.info(f"⚠️ Dhan intraday data should be fetched via database_service, not this legacy function")
+        logger.info(f"⚠️ Skipping Upstox API call for Dhan instrument")
+        return
+
     api_instance = upstox_client.HistoryApi(api_client)
 
     try:
