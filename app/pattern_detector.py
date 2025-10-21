@@ -597,8 +597,8 @@ class PatternDetector:
                 x5_top = max(columns[last_7[4]]['prices'])
                 x7_top = max(columns[last_7[6]]['prices'])
 
-                # Check if X1, X3, and X5 are EQUAL (within 0.5% tolerance) - base pattern
-                tolerance = x1_top * 0.005
+                # Check if X1, X3, and X5 are EQUAL (within tolerance based on box size) - base pattern
+                tolerance = x1_top * (self.box_percentage * 2)  # 2x box size for tolerance
                 if (abs(x1_top - x3_top) <= tolerance and
                     abs(x1_top - x5_top) <= tolerance and
                     x7_top > x1_top):  # X7 breaks above the resistance
@@ -630,8 +630,8 @@ class PatternDetector:
                 x7_top = max(columns[last_9[6]]['prices'])
                 x9_top = max(columns[last_9[8]]['prices'])
 
-                # Check if X1, X3, X5, and X7 are EQUAL (within 0.5% tolerance) - base pattern
-                tolerance = x1_top * 0.005
+                # Check if X1, X3, X5, and X7 are EQUAL (within tolerance based on box size) - base pattern
+                tolerance = x1_top * (self.box_percentage * 2)  # 2x box size for tolerance
                 if (abs(x1_top - x3_top) <= tolerance and
                     abs(x1_top - x5_top) <= tolerance and
                     abs(x1_top - x7_top) <= tolerance and
@@ -716,8 +716,8 @@ class PatternDetector:
                 o5_bottom = min(columns[last_7[4]]['prices'])
                 o7_bottom = min(columns[last_7[6]]['prices'])
 
-                # Check if O1, O3, and O5 are EQUAL (within 0.5% tolerance) - base pattern
-                tolerance = o1_bottom * 0.005
+                # Check if O1, O3, and O5 are EQUAL (within tolerance based on box size) - base pattern
+                tolerance = o1_bottom * (self.box_percentage * 2)  # 2x box size for tolerance
                 if (abs(o1_bottom - o3_bottom) <= tolerance and
                     abs(o1_bottom - o5_bottom) <= tolerance and
                     o7_bottom < o1_bottom):  # O7 breaks below the support
@@ -749,8 +749,8 @@ class PatternDetector:
                 o7_bottom = min(columns[last_9[6]]['prices'])
                 o9_bottom = min(columns[last_9[8]]['prices'])
 
-                # Check if O1, O3, O5, and O7 are EQUAL (within 0.5% tolerance) - base pattern
-                tolerance = o1_bottom * 0.005
+                # Check if O1, O3, O5, and O7 are EQUAL (within tolerance based on box size) - base pattern
+                tolerance = o1_bottom * (self.box_percentage * 2)  # 2x box size for tolerance
                 if (abs(o1_bottom - o3_bottom) <= tolerance and
                     abs(o1_bottom - o5_bottom) <= tolerance and
                     abs(o1_bottom - o7_bottom) <= tolerance and
@@ -895,7 +895,7 @@ class PatternDetector:
             return False
 
         # For any multiple top pattern, ensure we have the right number of X columns at resistance
-        tolerance = resistance_level * 0.005  # 0.5% tolerance for exact matching
+        tolerance = resistance_level * (self.box_percentage * 2)  # 2x box size for tolerance
         resistance_columns = []
 
         for col, high in x_columns.items():
@@ -1111,8 +1111,8 @@ class PatternDetector:
         # Find the resistance level from previous columns
         resistance_level = max(x_column_highs_before_current)
 
-        # Count X columns at similar resistance level (within 0.5% tolerance)
-        tolerance = resistance_level * 0.005
+        # Count X columns at similar resistance level (within tolerance based on box size)
+        tolerance = resistance_level * (self.box_percentage * 2)  # 2x box size for tolerance
         similar_highs = [h for h in x_column_highs_before_current if abs(h - resistance_level) <= tolerance]
 
         if len(similar_highs) < 2:  # Need at least double top
@@ -1246,8 +1246,8 @@ class PatternDetector:
         # Find the support level from previous O columns (double bottom support)
         double_bottom_support = min(o_column_lows_before_current)
 
-        # Count O columns at similar support level (within 0.5% tolerance)
-        tolerance = double_bottom_support * 0.005
+        # Count O columns at similar support level (within tolerance based on box size)
+        tolerance = double_bottom_support * (self.box_percentage * 2)  # 2x box size for tolerance
         similar_lows = [l for l in o_column_lows_before_current if abs(l - double_bottom_support) <= tolerance]
 
         if len(similar_lows) < 2:  # Need at least double bottom
@@ -1328,7 +1328,7 @@ class PatternDetector:
         else:
             x7_top = max(columns[last_7[6]]['prices'])
 
-        tolerance = x1_top * 0.005
+        tolerance = x1_top * (self.box_percentage * 2)  # 2x box size for tolerance
 
         # Validate Triple Top Buy: X1 & X3 equal, X5 breaks above
         if abs(x1_top - x3_top) > tolerance:
@@ -1414,7 +1414,7 @@ class PatternDetector:
         else:
             o7_bottom = min(columns[last_7[6]]['prices'])
 
-        tolerance = o1_bottom * 0.005
+        tolerance = o1_bottom * (self.box_percentage * 2)  # 2x box size for tolerance
 
         # Validate Triple Bottom Sell: O1 & O3 equal, O5 breaks below
         if abs(o1_bottom - o3_bottom) > tolerance:
@@ -1508,7 +1508,7 @@ class PatternDetector:
         # For X10, always use the maximum price in the column
         x10_top = max(columns[last_10[9]]['prices'])
 
-        tolerance = o1_bottom * 0.005
+        tolerance = o1_bottom * (self.box_percentage * 2)  # 2x box size for tolerance
 
         # Validate Double Bottom Sell #1: O1 & O3 equal, O5 breaks below
         if abs(o1_bottom - o3_bottom) > tolerance:
@@ -1613,7 +1613,7 @@ class PatternDetector:
         # For O10, always use the minimum price in the column
         o10_bottom = min(columns[last_10[9]]['prices'])
 
-        tolerance = x1_top * 0.005
+        tolerance = x1_top * (self.box_percentage * 2)  # 2x box size for tolerance
 
         # Validate Double Top Buy #1: X1 & X3 equal, X5 breaks above
         if abs(x1_top - x3_top) > tolerance:
@@ -1725,7 +1725,7 @@ class PatternDetector:
                     x5_top = max(columns[last_5[4]]['prices'])  # Breakout
 
                     # Make sure this is NOT a triple top (X1 and X3 should NOT be equal)
-                    tolerance = x1_top * 0.005
+                    tolerance = x1_top * (self.box_percentage * 2)  # 2x box size for tolerance
                     if abs(x1_top - x3_top) <= tolerance:
                         return  # This is a triple top, not pole FT
 
@@ -2167,8 +2167,8 @@ class PatternDetector:
         # Find the support level from previous columns
         support_level = min(o_column_lows_before_current)
 
-        # Count O columns at similar support level (within 0.5% tolerance)
-        tolerance = support_level * 0.005
+        # Count O columns at similar support level (within tolerance based on box size)
+        tolerance = support_level * (self.box_percentage * 2)  # 2x box size for tolerance
         similar_lows = [l for l in o_column_lows_before_current if abs(l - support_level) <= tolerance]
 
         if len(similar_lows) < 2:  # Need at least double bottom
@@ -2297,8 +2297,8 @@ class PatternDetector:
         # Find the resistance level from previous columns
         resistance_level = max(x_column_highs_before_current)
 
-        # Count X columns at similar resistance level (within 0.5% tolerance)
-        tolerance = resistance_level * 0.005
+        # Count X columns at similar resistance level (within tolerance based on box size)
+        tolerance = resistance_level * (self.box_percentage * 2)  # 2x box size for tolerance
         similar_highs = [h for h in x_column_highs_before_current if abs(h - resistance_level) <= tolerance]
 
         if len(similar_highs) < 2:  # Need at least double top
