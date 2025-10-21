@@ -45,6 +45,11 @@ in_memory_settings = {
     "enable_quadruple_top_bottom": True,
     "enable_pole_patterns": True,
     "enable_catapult_patterns": True,
+    "enable_turtle_patterns": True,
+    "enable_aft_patterns": True,
+    "enable_tweezer_patterns": True,
+    "enable_abc_patterns": True,
+    "enable_ziddi_patterns": True,
     "dhan_access_token": None
 }
 in_memory_high_rsi = {} # {symbol: rsi}
@@ -257,6 +262,11 @@ def get_settings():
         "enable_quadruple_top_bottom": settings.get("enable_quadruple_top_bottom", "True") == "True",
         "enable_pole_patterns": settings.get("enable_pole_patterns", "True") == "True",
         "enable_catapult_patterns": settings.get("enable_catapult_patterns", "True") == "True",
+        "enable_turtle_patterns": settings.get("enable_turtle_patterns", "True") == "True",
+        "enable_aft_patterns": settings.get("enable_aft_patterns", "True") == "True",
+        "enable_tweezer_patterns": settings.get("enable_tweezer_patterns", "True") == "True",
+        "enable_abc_patterns": settings.get("enable_abc_patterns", "True") == "True",
+        "enable_ziddi_patterns": settings.get("enable_ziddi_patterns", "True") == "True",
         "dhan_access_token": dhan_token,
     }
 
@@ -272,6 +282,11 @@ def save_settings(settings: Settings):
         "enable_quadruple_top_bottom": str(settings.enable_quadruple_top_bottom),
         "enable_pole_patterns": str(settings.enable_pole_patterns),
         "enable_catapult_patterns": str(settings.enable_catapult_patterns),
+        "enable_turtle_patterns": str(settings.enable_turtle_patterns),
+        "enable_aft_patterns": str(settings.enable_aft_patterns),
+        "enable_tweezer_patterns": str(settings.enable_tweezer_patterns),
+        "enable_abc_patterns": str(settings.enable_abc_patterns),
+        "enable_ziddi_patterns": str(settings.enable_ziddi_patterns),
     }
 
     # Handle dhan_access_token separately - update .env file if provided

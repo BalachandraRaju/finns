@@ -356,6 +356,61 @@
                             <span class="slider"></span>
                         </label>
                     </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <strong>Turtle Breakout Patterns</strong>
+                            <span>5-column range breakout with double pattern confirmation</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" name="enable_turtle_patterns" id="enable_turtle_patterns">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <strong>AFT (Anchor Follow Through) Patterns</strong>
+                            <span>Anchor column breakout/breakdown patterns</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" name="enable_aft_patterns" id="enable_aft_patterns">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <strong>Tweezer Patterns</strong>
+                            <span>Horizontal accumulation/distribution between anchor columns</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" name="enable_tweezer_patterns" id="enable_tweezer_patterns">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <strong>ABC Patterns (Bullish/Bearish)</strong>
+                            <span>Anchor-Breakout-Count momentum patterns with 45° trendline</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" name="enable_abc_patterns" id="enable_abc_patterns">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <strong>Ziddi Patterns (Bulls/Bears)</strong>
+                            <span>Stubborn bulls/bears - failed double patterns followed by reversal</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" name="enable_ziddi_patterns" id="enable_ziddi_patterns">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
                 </div>
 
                 <!-- API Configuration -->
@@ -403,6 +458,11 @@
                 document.getElementById('enable_quadruple_top_bottom').checked = settings.enable_quadruple_top_bottom !== false;
                 document.getElementById('enable_pole_patterns').checked = settings.enable_pole_patterns !== false;
                 document.getElementById('enable_catapult_patterns').checked = settings.enable_catapult_patterns !== false;
+                document.getElementById('enable_turtle_patterns').checked = settings.enable_turtle_patterns !== false;
+                document.getElementById('enable_aft_patterns').checked = settings.enable_aft_patterns !== false;
+                document.getElementById('enable_tweezer_patterns').checked = settings.enable_tweezer_patterns !== false;
+                document.getElementById('enable_abc_patterns').checked = settings.enable_abc_patterns !== false;
+                document.getElementById('enable_ziddi_patterns').checked = settings.enable_ziddi_patterns !== false;
 
                 // Set number input
                 document.getElementById('rsi_threshold').value = settings.rsi_threshold || 70;

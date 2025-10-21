@@ -259,6 +259,16 @@ def filter_duplicate_alerts(symbol: str, alerts: List[Dict]) -> List[Dict]:
             pattern_enabled = settings.get('enable_pole_patterns', True)
         elif 'catapult' in pattern_type:
             pattern_enabled = settings.get('enable_catapult_patterns', True)
+        elif 'turtle' in pattern_type:
+            pattern_enabled = settings.get('enable_turtle_patterns', True)
+        elif 'aft' in pattern_type:
+            pattern_enabled = settings.get('enable_aft_patterns', True)
+        elif 'tweezer' in pattern_type:
+            pattern_enabled = settings.get('enable_tweezer_patterns', True)
+        elif 'abc' in pattern_type:
+            pattern_enabled = settings.get('enable_abc_patterns', True)
+        elif 'ziddi' in pattern_type:
+            pattern_enabled = settings.get('enable_ziddi_patterns', True)
 
         if not pattern_enabled:
             logger.debug(f"❌ {symbol}: Pattern {pattern_type} disabled in settings")
