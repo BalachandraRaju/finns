@@ -12,7 +12,12 @@
         <h1>My Stock Watchlist</h1>
         <div class="controls">
             <a href="/add-stocks" class="button">Add Stock</a>
+            <button id="add-all-btn" class="button" style="background: #17a2b8;">➕ Add All Stocks</button>
+            <button id="remove-all-btn" class="button" style="background: #dc3545;">🗑️ Remove All</button>
+            <a href="/fibonacci-scanner" class="button" style="background: #ffd700; color: #000;">📊 Fib Scanner</a>
             <a href="/test-charts" class="button" style="background: #28a745;">Test Patterns</a>
+            <a href="/backtest" class="button" style="background: #764ba2;">🔬 Backtest</a>
+            <a href="/pattern-validation" class="button" style="background: #17a2b8;">📋 Validation</a>
             <a href="/pnf-matrix" class="button" style="background: #FFD700; color: #000;">🎯 PnF Matrix</a>
             <a href="/alerts" class="button" style="background: #dc3545;">🚨 Alerts</a>
             <a href="/settings" class="button" style="background: #667eea;">⚙️ Settings</a>
@@ -78,5 +83,82 @@
             </table>
         </div>
     </div>
+
+    <script>
+        // Add All Stocks functionality
+        document.getElementById('add-all-btn').addEventListener('click', async function() {
+            if (!confirm('⚠️ This will add ALL stocks (excluding test stocks) to your watchlist.\n\nStocks already in watchlist will be skipped.\n\nData population will run in background.\n\nContinue?')) {
+                return;
+            }
+
+            const btn = this;
+            btn.disabled = true;
+            btn.textContent = '⏳ Adding...';
+
+            try {
+                const response = await fetch('/api/watchlist/add-all', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert(`✅ ${data.message}\n\nAdded: ${data.added_count}\nSkipped: ${data.skipped_count}\n\nRefreshing page...`);
+                    window.location.reload();
+                } else {
+                    alert(`❌ Error: ${data.detail || 'Failed to add stocks'}`);
+                    btn.disabled = false;
+                    btn.textContent = '➕ Add All Stocks';
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+                btn.disabled = false;
+                btn.textContent = '➕ Add All Stocks';
+            }
+        });
+
+        // Remove All Stocks functionality
+        document.getElementById('remove-all-btn').addEventListener('click', async function() {
+            if (!confirm('⚠️ WARNING: This will REMOVE ALL stocks from your watchlist!\n\nThis action cannot be undone.\n\nAre you absolutely sure?')) {
+                return;
+            }
+
+            // Double confirmation for safety
+            if (!confirm('🚨 FINAL CONFIRMATION\n\nYou are about to delete your ENTIRE watchlist.\n\nClick OK to proceed or Cancel to abort.')) {
+                return;
+            }
+
+            const btn = this;
+            btn.disabled = true;
+            btn.textContent = '⏳ Removing...';
+
+            try {
+                const response = await fetch('/api/watchlist/remove-all', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    alert(`✅ ${data.message}\n\nRemoved: ${data.removed_count} stocks\n\nRefreshing page...`);
+                    window.location.reload();
+                } else {
+                    alert(`❌ Error: ${data.detail || 'Failed to remove stocks'}`);
+                    btn.disabled = false;
+                    btn.textContent = '🗑️ Remove All';
+                }
+            } catch (error) {
+                alert(`❌ Error: ${error.message}`);
+                btn.disabled = false;
+                btn.textContent = '🗑️ Remove All';
+            }
+        });
+    </script>
 </body>
 </html>

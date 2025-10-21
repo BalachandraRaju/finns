@@ -50,6 +50,11 @@ class Settings(BaseModel):
     enable_abc_patterns: Optional[bool] = True
     enable_ziddi_patterns: Optional[bool] = True
 
+    # Fibonacci scanner preferences
+    enable_fibonacci_bullish_scanner: Optional[bool] = True
+    enable_fibonacci_bearish_scanner: Optional[bool] = True
+    fibonacci_telegram_alerts: Optional[bool] = False
+
     # API Configuration (optional)
     dhan_access_token: Optional[str] = None
 

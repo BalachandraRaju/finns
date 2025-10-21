@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fibonacci Pattern Scanner</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .scanner-container {
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+
+        .scanner-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab-button {
+            padding: 12px 24px;
+            border: none;
+            background: #444;
+            color: white;
+            cursor: pointer;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+
+        .tab-button.active {
+            background: #28a745;
+        }
+
+        .tab-button.bearish.active {
+            background: #dc3545;
+        }
+
+        .tab-button:hover {
+            opacity: 0.8;
+        }
+
+        .scan-info {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        .scan-info h3 {
+            margin: 0 0 10px 0;
+            color: #28a745;
+        }
+
+        .scan-info.bearish h3 {
+            color: #dc3545;
+        }
+
+        .signals-table {
+            width: 100%;
+            background: #2a2a2a;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .signals-table table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .signals-table th {
+            background: #333;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #444;
+        }
+
+        .signals-table td {
+            padding: 12px;
+            border-bottom: 1px solid #444;
+        }
+
+        .signals-table tr:hover {
+            background: #333;
+        }
+
+        .symbol-link {
+            color: #4a9eff;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .symbol-link:hover {
+            text-decoration: underline;
+        }
+
+        .pattern-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #764ba2;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .buy-badge {
+            background: #28a745;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .sell-badge {
+            background: #dc3545;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .fib-level {
+            color: #ffd700;
+            font-weight: 600;
+        }
+
+        .risk-reward {
+            font-weight: 600;
+        }
+
+        .risk-reward.good {
+            color: #28a745;
+        }
+
+        .risk-reward.excellent {
+            color: #00ff00;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+
+        .no-signals {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+
+        .refresh-btn {
+            padding: 10px 20px;
+            background: #17a2b8;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .refresh-btn:hover {
+            opacity: 0.8;
+        }
+
+        .refresh-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>📊 Fibonacci Pattern Scanner</h1>
+        <div class="controls">
+            <a href="/" class="button">Back to Watchlist</a>
+            <a href="/alerts" class="button" style="background: #f39c12;">View Alerts</a>
+            <a href="/settings" class="button" style="background: #6c757d;">Settings</a>
+        </div>
+    </header>
+
+    <div class="scanner-container">
+        <!-- Info Box -->
+        <div class="scan-info" id="scan-info">
+            <h3>🎯 Fibonacci Pattern Scanner</h3>
+            <p><strong>Bullish Scanner (50-61% Zone):</strong> Identifies stocks with bullish patterns in the golden Fibonacci retracement zone (50-61.8%). This represents optimal "buy the dip" entry points where bullish patterns have higher probability of success.</p>
+            <p><strong>Bearish Scanner (23-38% Zone):</strong> Identifies stocks with bearish patterns in the early warning Fibonacci zone (23.6-38.2%). This represents early "sell the rally" signals before deeper corrections.</p>
+            <p><strong>Strategy:</strong> Combine pattern confirmation + Fibonacci support/resistance + risk-reward optimization for high-probability, low-risk entries.</p>
+        </div>
+
+        <!-- Tabs -->
+        <div class="scanner-tabs">
+            <button class="tab-button active" id="bullish-tab" onclick="switchTab('bullish')">
+                📈 Bullish Patterns (50-61% Fib)
+            </button>
+            <button class="tab-button bearish" id="bearish-tab" onclick="switchTab('bearish')">
+                📉 Bearish Patterns (23-38% Fib)
+            </button>
+            <button class="refresh-btn" id="refresh-btn" onclick="refreshScan()">
+                🔄 Refresh Scan
+            </button>
+        </div>
+
+        <!-- Results Container -->
+        <div id="results-container">
+            <div class="loading">
+                <p>⏳ Loading scanner results...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'bullish';
+
+        async function switchTab(tab) {
+            currentTab = tab;
+
+            // Update tab buttons
+            document.getElementById('bullish-tab').classList.toggle('active', tab === 'bullish');
+            document.getElementById('bearish-tab').classList.toggle('active', tab === 'bearish');
+
+            // Update info box
+            const infoBox = document.getElementById('scan-info');
+            if (tab === 'bearish') {
+                infoBox.classList.add('bearish');
+            } else {
+                infoBox.classList.remove('bearish');
+            }
+
+            // Load results
+            await loadResults(tab);
+        }
+
+        async function loadResults(scanType) {
+            const container = document.getElementById('results-container');
+            container.innerHTML = '<div class="loading"><p>⏳ Scanning watchlist...</p></div>';
+
+            try {
+                const response = await fetch(`/api/fibonacci-scanner/${scanType}`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    displayResults(data);
+                } else {
+                    container.innerHTML = `<div class="no-signals"><p>❌ Error: ${data.detail || 'Failed to load results'}</p></div>`;
+                }
+            } catch (error) {
+                container.innerHTML = `<div class="no-signals"><p>❌ Error: ${error.message}</p></div>`;
+            }
+        }
+
+        function displayResults(data) {
+            const container = document.getElementById('results-container');
+
+            if (data.signals.length === 0) {
+                container.innerHTML = `
+                    <div class="no-signals">
+                        <h3>No ${data.scan_type} signals found</h3>
+                        <p>No stocks currently meet the ${data.scan_type} pattern + Fibonacci criteria.</p>
+                        <p>Try refreshing later or check the other scanner.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <div class="signals-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Pattern</th>
+                                <th>Type</th>
+                                <th>Current Price</th>
+                                <th>Fib Level</th>
+                                <th>Entry</th>
+                                <th>Stop Loss</th>
+                                <th>Target</th>
+                                <th>R:R Ratio</th>
+                                <th>Trigger Reason</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            for (const signal of data.signals) {
+                const rrClass = signal.risk_reward_ratio >= 3 ? 'excellent' : (signal.risk_reward_ratio >= 2 ? 'good' : '');
+                const alertBadge = signal.alert_type === 'BUY' ? 'buy-badge' : 'sell-badge';
+
+                html += `
+                    <tr>
+                        <td>
+                            <a href="/chart/${signal.instrument_key}" target="_blank" class="symbol-link">
+                                ${signal.symbol}
+                            </a>
+                        </td>
+                        <td><span class="pattern-badge">${signal.pattern_name}</span></td>
+                        <td><span class="${alertBadge}">${signal.alert_type}</span></td>
+                        <td>₹${signal.current_price.toFixed(2)}</td>
+                        <td><span class="fib-level">${signal.fibonacci_level}%</span></td>
+                        <td>₹${signal.entry_price.toFixed(2)}</td>
+                        <td>₹${signal.stop_loss.toFixed(2)}</td>
+                        <td>₹${signal.target_price.toFixed(2)}</td>
+                        <td><span class="risk-reward ${rrClass}">${signal.risk_reward_ratio}:1</span></td>
+                        <td>${signal.trigger_reason}</td>
+                    </tr>
+                `;
+            }
+
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+                <p style="margin-top: 15px; color: #888; text-align: center;">
+                    Found ${data.count} ${data.scan_type} signal${data.count !== 1 ? 's' : ''} | 
+                    Sorted by Risk-Reward Ratio (highest first)
+                </p>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        async function refreshScan() {
+            const btn = document.getElementById('refresh-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Scanning...';
+
+            await loadResults(currentTab);
+
+            btn.disabled = false;
+            btn.textContent = '🔄 Refresh Scan';
+        }
+
+        // Load initial results
+        window.addEventListener('DOMContentLoaded', () => {
+            loadResults('bullish');
+        });
+    </script>
+</body>
+</html>
+

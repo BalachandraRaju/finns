@@ -413,6 +413,45 @@
                     </div>
                 </div>
 
+                <!-- Fibonacci Scanner Settings -->
+                <div class="settings-section">
+                    <h2><span class="icon">📊</span> Fibonacci Pattern Scanner</h2>
+                    <p>Configure Fibonacci retracement pattern scanners</p>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <strong>Bullish Fibonacci Scanner (50-61% Zone)</strong>
+                            <span>Scan for bullish patterns in golden Fibonacci retracement zone</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" name="enable_fibonacci_bullish_scanner" id="enable_fibonacci_bullish_scanner">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <strong>Bearish Fibonacci Scanner (23-38% Zone)</strong>
+                            <span>Scan for bearish patterns in early warning Fibonacci zone</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" name="enable_fibonacci_bearish_scanner" id="enable_fibonacci_bearish_scanner">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+
+                    <div class="setting-item">
+                        <div class="setting-label">
+                            <strong>Fibonacci Telegram Alerts</strong>
+                            <span>Send Telegram notifications for Fibonacci scanner signals</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" name="fibonacci_telegram_alerts" id="fibonacci_telegram_alerts">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
                 <!-- API Configuration -->
                 <div class="settings-section">
                     <h2><span class="icon">🔑</span> API Configuration</h2>
@@ -463,6 +502,9 @@
                 document.getElementById('enable_tweezer_patterns').checked = settings.enable_tweezer_patterns !== false;
                 document.getElementById('enable_abc_patterns').checked = settings.enable_abc_patterns !== false;
                 document.getElementById('enable_ziddi_patterns').checked = settings.enable_ziddi_patterns !== false;
+                document.getElementById('enable_fibonacci_bullish_scanner').checked = settings.enable_fibonacci_bullish_scanner !== false;
+                document.getElementById('enable_fibonacci_bearish_scanner').checked = settings.enable_fibonacci_bearish_scanner !== false;
+                document.getElementById('fibonacci_telegram_alerts').checked = settings.fibonacci_telegram_alerts === true;
 
                 // Set number input
                 document.getElementById('rsi_threshold').value = settings.rsi_threshold || 70;
@@ -509,6 +551,9 @@
                 enable_tweezer_patterns: formData.get('enable_tweezer_patterns') === 'on',
                 enable_abc_patterns: formData.get('enable_abc_patterns') === 'on',
                 enable_ziddi_patterns: formData.get('enable_ziddi_patterns') === 'on',
+                enable_fibonacci_bullish_scanner: formData.get('enable_fibonacci_bullish_scanner') === 'on',
+                enable_fibonacci_bearish_scanner: formData.get('enable_fibonacci_bearish_scanner') === 'on',
+                fibonacci_telegram_alerts: formData.get('fibonacci_telegram_alerts') === 'on',
             };
 
             // Add dhan_access_token if provided

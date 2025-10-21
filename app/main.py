@@ -19,6 +19,7 @@ else:
     from app import scheduler
     logger.info("📊 Using SEQUENTIAL alert scheduler (legacy mode)")
 from app.pnf_matrix import PnFMatrixCalculator
+from app.fibonacci_scanner import FibonacciScanner
 from app.auth import (
     get_current_user_from_session,
     get_current_user_optional,
@@ -34,6 +35,7 @@ from app.user_service import (
     create_user,
     create_default_admin_user
 )
+from app import backtest_service
 
 load_dotenv()
 
@@ -345,6 +347,11 @@ async def data_status_page(request: Request, current_user: User = Depends(get_cu
     """Page to show data population status."""
     return templates.TemplateResponse("data_status.html", {"request": request, "user": current_user})
 
+@app.get("/fibonacci-scanner", response_class=HTMLResponse)
+async def fibonacci_scanner_page(request: Request, current_user: User = Depends(get_current_user_from_session)):
+    """Page to show Fibonacci pattern scanner results."""
+    return templates.TemplateResponse("fibonacci_scanner.html", {"request": request, "user": current_user})
+
 @app.get("/test-charts", response_class=HTMLResponse)
 async def test_charts_page(request: Request, pattern: str = "bullish_breakout", current_user: User = Depends(get_current_user_from_session)):
     """Page to test chart patterns with dummy data and real watchlist stocks."""
@@ -446,6 +453,90 @@ async def delete_from_watchlist(request: Request, instrument_key: str, current_u
 
 # --- API Routes ---
 api_router = APIRouter(prefix="/api")
+
+@api_router.post("/watchlist/add-all")
+async def add_all_stocks_to_watchlist(
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user_from_session)
+):
+    """Add all 208 stocks from STOCKS_LIST to watchlist."""
+    try:
+        added_count = 0
+        skipped_count = 0
+
+        # Get existing watchlist to avoid duplicates
+        existing_watchlist = crud.get_watchlist_details()
+        existing_keys = {stock.instrument_key for stock in existing_watchlist}
+
+        for stock_info in crud.STOCKS_LIST:
+            # Skip test stocks
+            if 'NSETEST' in stock_info['symbol']:
+                continue
+
+            # Skip if already in watchlist
+            if stock_info['instrument_key'] in existing_keys:
+                skipped_count += 1
+                continue
+
+            stock_request = models.AddStockRequest(
+                instrument_key=stock_info['instrument_key'],
+                symbol=stock_info['symbol'],
+                trade_type="Bullish",  # Default
+                tags="Bulk Added",
+                target_price=None,
+                stoploss=None,
+            )
+
+            # Add stock to watchlist
+            crud.add_stock_to_watchlist(stock_request)
+            added_count += 1
+
+            # Initialize status for background data population
+            data_population_status[stock_info['instrument_key']] = {
+                "status": "queued",
+                "symbol": stock_info['symbol'],
+                "message": f"Queued for data population: {stock_info['symbol']}",
+                "progress": 0
+            }
+
+            # Queue background task for data population
+            background_tasks.add_task(populate_stock_data_background, stock_info['instrument_key'], stock_info['symbol'])
+
+        logger.info(f"✅ Bulk add: Added {added_count} stocks, skipped {skipped_count} (already in watchlist)")
+
+        return {
+            "status": "success",
+            "message": f"Added {added_count} stocks to watchlist. Skipped {skipped_count} stocks already in watchlist.",
+            "added_count": added_count,
+            "skipped_count": skipped_count
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error in bulk add: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.post("/watchlist/remove-all")
+async def remove_all_stocks_from_watchlist(current_user: User = Depends(get_current_user_from_session)):
+    """Remove all stocks from watchlist."""
+    try:
+        watchlist = crud.get_watchlist_details()
+        removed_count = len(watchlist)
+
+        for stock in watchlist:
+            crud.delete_stock_from_watchlist(stock.instrument_key)
+
+        logger.info(f"✅ Bulk remove: Removed {removed_count} stocks from watchlist")
+
+        return {
+            "status": "success",
+            "message": f"Removed {removed_count} stocks from watchlist.",
+            "removed_count": removed_count
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error in bulk remove: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.post("/watchlist/add")
 async def add_to_watchlist(
@@ -682,14 +773,19 @@ async def test_telegram_alert():
         }
 
 @app.get("/alerts/analytics", response_class=HTMLResponse)
-async def alerts_analytics_page(request: Request, current_user: User = Depends(get_current_user_from_session)):
+async def alerts_analytics_page(request: Request):
     """Trading alerts analytics page."""
-    return templates.TemplateResponse("alerts_analytics.html", {"request": request, "user": current_user})
+    return templates.TemplateResponse("alerts_analytics.html", {"request": request, "user": {"email": "test@example.com"}})
 
 @app.get("/pattern-validation", response_class=HTMLResponse)
-async def pattern_validation_page(request: Request, current_user: User = Depends(get_current_user_from_session)):
+async def pattern_validation_page(request: Request):
     """Pattern validation dashboard page."""
-    return templates.TemplateResponse("pattern_validation.html", {"request": request, "user": current_user})
+    return templates.TemplateResponse("pattern_validation.html", {"request": request, "user": {"email": "test@example.com"}})
+
+@app.get("/alert-verification", response_class=HTMLResponse)
+async def alert_verification_page(request: Request):
+    """Alert verification page for detailed pattern analysis."""
+    return templates.TemplateResponse("alert_verification.html", {"request": request, "user": {"email": "test@example.com"}})
 
 @api_router.post("/pnf-matrix")
 async def calculate_pnf_matrix(request: Request):
@@ -1043,6 +1139,76 @@ def _backfill_today_worker():
 
 # --- Pattern Validation API Routes ---
 
+@api_router.get("/pattern-validation/test")
+async def test_validation_api():
+    """Test endpoint to verify pattern validation API is working."""
+    return {"status": "success", "message": "Pattern validation API is working"}
+
+@api_router.get("/pattern-validation/stocks")
+async def get_available_stocks():
+    """Get list of available stocks from alerts."""
+    try:
+        stocks = crud.get_available_stocks()
+        return {"status": "success", "stocks": stocks}
+    except Exception as e:
+        logger.error(f"Error fetching available stocks: {e}")
+        return {"status": "error", "message": str(e)}
+
+@api_router.get("/pattern-validation/patterns")
+async def get_available_patterns():
+    """Get list of available pattern types from alerts."""
+    try:
+        patterns = crud.get_available_patterns()
+        return {"status": "success", "patterns": patterns}
+    except Exception as e:
+        logger.error(f"Error fetching available patterns: {e}")
+        return {"status": "error", "message": str(e)}
+
+@api_router.get("/pattern-validation/debug")
+async def debug_validation_params(
+    symbol: Optional[str] = None,
+    alert_type: Optional[str] = None,
+    pattern_type: Optional[str] = None,
+    is_super_alert: Optional[bool] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    outcome: Optional[str] = None,
+    validation_status: Optional[str] = None,
+    environment: Optional[str] = None,
+    fibonacci_level: Optional[str] = None,
+    limit: Optional[int] = 100,
+    offset: Optional[int] = 0,
+):
+    """Debug endpoint to see what parameters are being received."""
+    return {
+        "status": "success",
+        "received_params": {
+            "symbol": symbol,
+            "alert_type": alert_type,
+            "pattern_type": pattern_type,
+            "is_super_alert": is_super_alert,
+            "start_date": start_date,
+            "end_date": end_date,
+            "outcome": outcome,
+            "validation_status": validation_status,
+            "environment": environment,
+            "fibonacci_level": fibonacci_level,
+            "limit": limit,
+            "offset": offset
+        }
+    }
+
+@api_router.get("/pattern-validation/alerts/count")
+async def get_total_alerts_count():
+    """Get total count of alerts for debugging."""
+    try:
+        from app.mongo_service import alerts_collection
+        total_count = alerts_collection.count_documents({})
+        return {"status": "success", "total_alerts": total_count}
+    except Exception as e:
+        logger.error(f"Error getting total alerts count: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @api_router.get("/pattern-validation/alerts")
 async def get_validation_alerts(
     symbol: Optional[str] = None,
@@ -1061,16 +1227,22 @@ async def get_validation_alerts(
 ):
     """Get alerts with enhanced filtering for validation dashboard."""
     try:
-        # Convert empty strings to None
-        symbol = symbol if symbol else None
-        alert_type = alert_type if alert_type else None
-        pattern_type = pattern_type if pattern_type else None
-        outcome = outcome if outcome else None
-        validation_status = validation_status if validation_status else None
-        environment = environment if environment else None
-        fibonacci_level = fibonacci_level if fibonacci_level else None
-        start_date = start_date if start_date else None
-        end_date = end_date if end_date else None
+        # Convert empty strings to None for proper filtering
+        def clean_param(param):
+            return param if param and param.strip() else None
+
+        # Clean all string parameters
+        symbol = clean_param(symbol)
+        alert_type = clean_param(alert_type)
+        pattern_type = clean_param(pattern_type)
+        outcome = clean_param(outcome)
+        validation_status = clean_param(validation_status)
+        environment = clean_param(environment)
+        fibonacci_level = clean_param(fibonacci_level)
+        start_date = clean_param(start_date)
+        end_date = clean_param(end_date)
+
+        logger.info(f"Pattern validation filters: symbol={symbol}, alert_type={alert_type}, start_date={start_date}, end_date={end_date}")
 
         filters = models.AlertFilters(
             symbol=symbol,
@@ -1094,9 +1266,12 @@ async def get_validation_alerts(
             "status": "success",
             "alerts": alerts,
             "total_count": total_count,
-            "limit": limit,
-            "offset": offset
+            "limit": limit or 100,
+            "offset": offset or 0
         }
+    except ValueError as e:
+        logger.error(f"Validation error in get_validation_alerts: {e}")
+        raise HTTPException(status_code=422, detail=f"Invalid parameter: {str(e)}")
     except Exception as e:
         logger.error(f"Error fetching validation alerts: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -1164,6 +1339,140 @@ async def clear_validation_cache(
         logger.error(f"Error clearing validation cache: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@api_router.get("/alerts/{alert_id}")
+async def get_alert_details(
+    alert_id: str,
+    current_user: User = Depends(get_current_user_from_session)
+):
+    """Get detailed information for a specific alert."""
+    try:
+        alert = crud.get_alert_by_id(alert_id)
+        if alert:
+            return {"status": "success", "alert": alert}
+        else:
+            raise HTTPException(status_code=404, detail="Alert not found")
+    except Exception as e:
+        logger.error(f"Error fetching alert details: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/pattern-validation/alerts/export-detailed")
+async def export_detailed_alerts(
+    symbol: Optional[str] = None,
+    alert_type: Optional[str] = None,
+    pattern_type: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    environment: Optional[str] = None,
+    current_user: User = Depends(get_current_user_from_session)
+):
+    """Export detailed alerts with complete date and verification information."""
+    try:
+        # Get all alerts without pagination for export
+        alerts = crud.get_alerts_with_filters(
+            symbol=symbol,
+            alert_type=alert_type,
+            pattern_type=pattern_type,
+            start_date=start_date,
+            end_date=end_date,
+            environment=environment,
+            limit=10000,  # Large limit for export
+            offset=0
+        )
+
+        if not alerts:
+            raise HTTPException(status_code=404, detail="No alerts found for export")
+
+        # Create CSV content with detailed information
+        import io
+        import csv
+        from fastapi.responses import StreamingResponse
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Write header
+        writer.writerow([
+            'Date', 'Time', 'Symbol', 'Pattern Type', 'Alert Type',
+            'Signal Price', 'Trigger Reason', 'Environment', 'Is Super Alert',
+            'Fibonacci Level', 'Validation Status', 'Outcome', 'Profit/Loss %',
+            'Days to Outcome', 'Validated By', 'Notes'
+        ])
+
+        # Write data rows
+        for alert in alerts:
+            timestamp = alert.get('timestamp', '')
+            if timestamp:
+                try:
+                    if hasattr(timestamp, 'strftime'):
+                        date_str = timestamp.strftime('%Y-%m-%d')
+                        time_str = timestamp.strftime('%H:%M:%S')
+                    else:
+                        # Handle string timestamp
+                        timestamp_str = str(timestamp)
+                        if 'T' in timestamp_str:
+                            date_str = timestamp_str.split('T')[0]
+                            time_str = timestamp_str.split('T')[1][:8]
+                        else:
+                            date_str = timestamp_str
+                            time_str = ''
+                except:
+                    date_str = str(timestamp)
+                    time_str = ''
+            else:
+                date_str = ''
+                time_str = ''
+
+            writer.writerow([
+                date_str,
+                time_str,
+                alert.get('symbol', ''),
+                alert.get('pattern_type', ''),
+                alert.get('alert_type', ''),
+                alert.get('signal_price', ''),
+                alert.get('trigger_reason', ''),
+                alert.get('environment', ''),
+                'Yes' if alert.get('is_super_alert') else 'No',
+                alert.get('fibonacci_level', ''),
+                alert.get('validation_status', ''),
+                alert.get('outcome', ''),
+                alert.get('profit_loss_percent', ''),
+                alert.get('days_to_outcome', ''),
+                alert.get('validated_by', ''),
+                alert.get('notes', '')
+            ])
+
+        output.seek(0)
+
+        # Create filename with current date
+        from datetime import datetime
+        filename = f"detailed_alerts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+        return StreamingResponse(
+            io.BytesIO(output.getvalue().encode('utf-8')),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    except Exception as e:
+        logger.error(f"Error exporting detailed alerts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/pattern-analysis/detailed")
+async def get_detailed_pattern_analysis(
+    pattern_type: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    environment: Optional[str] = None,
+    current_user: User = Depends(get_current_user_from_session)
+):
+    """Get detailed pattern analysis with individual alert breakdown."""
+    try:
+        analysis = crud.get_detailed_pattern_analysis(pattern_type, start_date, end_date, environment)
+        return {"status": "success", "analysis": analysis}
+    except Exception as e:
+        logger.error(f"Error fetching detailed pattern analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @api_router.get("/pattern-validation/alerts/export")
 async def export_alerts_csv(
     symbol: Optional[str] = None,
@@ -1219,6 +1528,249 @@ async def export_alerts_csv(
         raise HTTPException(status_code=500, detail=str(e))
 
 app.include_router(api_router)
+
+# ============================================================================
+# BACKTESTING ROUTES
+# ============================================================================
+
+@app.get("/backtest", response_class=HTMLResponse)
+async def backtest_page(request: Request, current_user: User = Depends(get_current_user_from_session)):
+    """Render the backtesting page."""
+    return templates.TemplateResponse("backtest.html", {"request": request, "user": current_user})
+
+
+@app.post("/api/backtest/start")
+async def start_backtest(request: Request, current_user: User = Depends(get_current_user_from_session)):
+    """Start a new backtest job."""
+    try:
+        data = await request.json()
+
+        config = {
+            'months': data.get('months', 2),
+            'max_stocks': data.get('max_stocks'),
+            'box_size': data.get('box_size', 1.0),
+            'reversal': data.get('reversal', 3)
+        }
+
+        job_id = backtest_service.create_backtest_job(config)
+
+        return {
+            "success": True,
+            "job_id": job_id,
+            "message": "Backtest started successfully"
+        }
+    except Exception as e:
+        logger.error(f"Error starting backtest: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/backtest/status/{job_id}")
+async def get_backtest_status(job_id: str, current_user: User = Depends(get_current_user_from_session)):
+    """Get the status of a backtest job."""
+    job = backtest_service.get_backtest_job(job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Get recent logs (last 10)
+    recent_logs = job.logs[-10:] if len(job.logs) > 10 else job.logs
+
+    return {
+        "job_id": job_id,
+        "status": job.status,
+        "progress": job.progress,
+        "logs": recent_logs,
+        "error": job.error
+    }
+
+
+@app.post("/api/backtest/stop/{job_id}")
+async def stop_backtest(job_id: str, current_user: User = Depends(get_current_user_from_session)):
+    """Stop a running backtest job."""
+    success = backtest_service.stop_backtest_job(job_id)
+
+    if not success:
+        raise HTTPException(status_code=404, detail="Job not found or already completed")
+
+    return {"success": True, "message": "Backtest stopped"}
+
+
+@app.get("/api/backtest/results/{job_id}")
+async def get_backtest_results(job_id: str, current_user: User = Depends(get_current_user_from_session)):
+    """Get the results of a completed backtest."""
+    job = backtest_service.get_backtest_job(job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status != "completed":
+        raise HTTPException(status_code=400, detail="Backtest not completed yet")
+
+    return job.results
+
+
+@app.get("/api/backtest/download/{job_id}/{format}")
+async def download_backtest_results(job_id: str, format: str, current_user: User = Depends(get_current_user_from_session)):
+    """Download backtest results in CSV or JSON format."""
+    job = backtest_service.get_backtest_job(job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status != "completed":
+        raise HTTPException(status_code=400, detail="Backtest not completed yet")
+
+    if format == "csv":
+        # Generate CSV
+        import csv
+        import io
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Header
+        writer.writerow([
+            'Pattern', 'Total Signals', 'Profitable', 'Losing',
+            'Success Rate %', 'Win/Loss Ratio', 'Avg Return %', 'Confidence'
+        ])
+
+        # Data
+        for pattern in job.results['patterns']:
+            writer.writerow([
+                pattern['name'],
+                pattern['total_signals'],
+                pattern['profitable_signals'],
+                pattern['losing_signals'],
+                f"{pattern['success_rate']:.2f}",
+                f"{pattern['win_loss_ratio']:.2f}",
+                f"{pattern['avg_return']:.2f}",
+                pattern['confidence']
+            ])
+
+        content = output.getvalue()
+
+        return Response(
+            content=content,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename=backtest_results_{job_id[:8]}.csv"
+            }
+        )
+
+    elif format == "json":
+        import json
+
+        content = json.dumps(job.results, indent=2)
+
+        return Response(
+            content=content,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f"attachment; filename=backtest_results_{job_id[:8]}.json"
+            }
+        )
+
+    else:
+        raise HTTPException(status_code=400, detail="Invalid format. Use 'csv' or 'json'")
+
+
+# ============================================================================
+# FIBONACCI PATTERN SCANNER API
+# ============================================================================
+
+@api_router.get("/fibonacci-scanner/bullish")
+async def scan_bullish_fibonacci_patterns(current_user: User = Depends(get_current_user_from_session)):
+    """
+    Scan watchlist for bullish patterns in 50-61% Fibonacci retracement zone.
+
+    Returns stocks with bullish patterns at golden zone entry points.
+    """
+    try:
+        scanner = FibonacciScanner()
+        signals = scanner.scan_watchlist(scan_type="bullish")
+
+        # Convert to dict for JSON response
+        results = []
+        for signal in signals:
+            results.append({
+                "symbol": signal.symbol,
+                "instrument_key": signal.instrument_key,
+                "pattern_type": signal.pattern_type,
+                "pattern_name": signal.pattern_name,
+                "alert_type": signal.alert_type,
+                "current_price": round(signal.current_price, 2),
+                "fibonacci_level": signal.fibonacci_level,
+                "fibonacci_price": round(signal.fibonacci_price, 2),
+                "swing_low": round(signal.swing_low, 2),
+                "swing_high": round(signal.swing_high, 2),
+                "entry_price": round(signal.entry_price, 2),
+                "stop_loss": round(signal.stop_loss, 2),
+                "target_price": round(signal.target_price, 2),
+                "risk_reward_ratio": signal.risk_reward_ratio,
+                "trigger_reason": signal.trigger_reason,
+                "timestamp": signal.timestamp.isoformat()
+            })
+
+        return {
+            "status": "success",
+            "scan_type": "bullish",
+            "count": len(results),
+            "signals": results
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error in bullish Fibonacci scanner: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@api_router.get("/fibonacci-scanner/bearish")
+async def scan_bearish_fibonacci_patterns(current_user: User = Depends(get_current_user_from_session)):
+    """
+    Scan watchlist for bearish patterns in 23-38% Fibonacci retracement zone.
+
+    Returns stocks with bearish patterns at early warning zone.
+    """
+    try:
+        scanner = FibonacciScanner()
+        signals = scanner.scan_watchlist(scan_type="bearish")
+
+        # Convert to dict for JSON response
+        results = []
+        for signal in signals:
+            results.append({
+                "symbol": signal.symbol,
+                "instrument_key": signal.instrument_key,
+                "pattern_type": signal.pattern_type,
+                "pattern_name": signal.pattern_name,
+                "alert_type": signal.alert_type,
+                "current_price": round(signal.current_price, 2),
+                "fibonacci_level": signal.fibonacci_level,
+                "fibonacci_price": round(signal.fibonacci_price, 2),
+                "swing_low": round(signal.swing_low, 2),
+                "swing_high": round(signal.swing_high, 2),
+                "entry_price": round(signal.entry_price, 2),
+                "stop_loss": round(signal.stop_loss, 2),
+                "target_price": round(signal.target_price, 2),
+                "risk_reward_ratio": signal.risk_reward_ratio,
+                "trigger_reason": signal.trigger_reason,
+                "timestamp": signal.timestamp.isoformat()
+            })
+
+        return {
+            "status": "success",
+            "scan_type": "bearish",
+            "count": len(results),
+            "signals": results
+        }
+
+    except Exception as e:
+        logger.error(f"❌ Error in bearish Fibonacci scanner: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# STARTUP EVENT
+# ============================================================================
 
 # Initialize pattern validation database indexes on startup
 @app.on_event("startup")

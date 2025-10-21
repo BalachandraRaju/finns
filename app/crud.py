@@ -50,6 +50,9 @@ in_memory_settings = {
     "enable_tweezer_patterns": True,
     "enable_abc_patterns": True,
     "enable_ziddi_patterns": True,
+    "enable_fibonacci_bullish_scanner": True,
+    "enable_fibonacci_bearish_scanner": True,
+    "fibonacci_telegram_alerts": False,
     "dhan_access_token": None
 }
 in_memory_high_rsi = {} # {symbol: rsi}
@@ -267,6 +270,9 @@ def get_settings():
         "enable_tweezer_patterns": settings.get("enable_tweezer_patterns", "True") == "True",
         "enable_abc_patterns": settings.get("enable_abc_patterns", "True") == "True",
         "enable_ziddi_patterns": settings.get("enable_ziddi_patterns", "True") == "True",
+        "enable_fibonacci_bullish_scanner": settings.get("enable_fibonacci_bullish_scanner", "True") == "True",
+        "enable_fibonacci_bearish_scanner": settings.get("enable_fibonacci_bearish_scanner", "True") == "True",
+        "fibonacci_telegram_alerts": settings.get("fibonacci_telegram_alerts", "False") == "True",
         "dhan_access_token": dhan_token,
     }
 
@@ -287,6 +293,9 @@ def save_settings(settings: Settings):
         "enable_tweezer_patterns": str(settings.enable_tweezer_patterns),
         "enable_abc_patterns": str(settings.enable_abc_patterns),
         "enable_ziddi_patterns": str(settings.enable_ziddi_patterns),
+        "enable_fibonacci_bullish_scanner": str(settings.enable_fibonacci_bullish_scanner),
+        "enable_fibonacci_bearish_scanner": str(settings.enable_fibonacci_bearish_scanner),
+        "fibonacci_telegram_alerts": str(settings.fibonacci_telegram_alerts),
     }
 
     # Handle dhan_access_token separately - update .env file if provided
