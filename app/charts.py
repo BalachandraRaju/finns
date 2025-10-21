@@ -840,14 +840,36 @@ def generate_pnf_chart_html(instrument_key, box_pct=0.01, reversal=3, interval="
     try:
         first_ts = all_candles[0]['timestamp']
         last_ts = all_candles[-1]['timestamp']
-        first_ts_str = first_ts.isoformat(sep=' ') if hasattr(first_ts, 'isoformat') else str(first_ts)
-        last_ts_str = last_ts.isoformat(sep=' ') if hasattr(last_ts, 'isoformat') else str(last_ts)
 
-        # Format last timestamp for display
-        if hasattr(last_ts, 'strftime'):
-            last_ts_display = last_ts.strftime('%d-%b %H:%M')
+        # Convert UTC to IST (UTC + 5:30)
+        import pytz
+        ist = pytz.timezone('Asia/Kolkata')
+
+        # Convert timestamps to IST
+        if hasattr(first_ts, 'replace'):
+            # If timezone-naive, assume UTC
+            if first_ts.tzinfo is None:
+                first_ts = pytz.utc.localize(first_ts)
+            first_ts_ist = first_ts.astimezone(ist)
         else:
-            last_ts_display = str(last_ts).split('.')[0]
+            first_ts_ist = first_ts
+
+        if hasattr(last_ts, 'replace'):
+            # If timezone-naive, assume UTC
+            if last_ts.tzinfo is None:
+                last_ts = pytz.utc.localize(last_ts)
+            last_ts_ist = last_ts.astimezone(ist)
+        else:
+            last_ts_ist = last_ts
+
+        first_ts_str = first_ts_ist.isoformat(sep=' ') if hasattr(first_ts_ist, 'isoformat') else str(first_ts_ist)
+        last_ts_str = last_ts_ist.isoformat(sep=' ') if hasattr(last_ts_ist, 'isoformat') else str(last_ts_ist)
+
+        # Format last timestamp for display in IST
+        if hasattr(last_ts_ist, 'strftime'):
+            last_ts_display = last_ts_ist.strftime('%d-%b %H:%M IST')
+        else:
+            last_ts_display = str(last_ts_ist).split('.')[0] + ' IST'
 
         # Add LTP (Last Traded Price) annotation at top-left
         fig.add_annotation(
