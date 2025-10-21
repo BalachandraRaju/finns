@@ -42,25 +42,35 @@ class FibonacciScanner:
     # Bullish patterns
     BULLISH_PATTERNS = {
         PatternType.ABC_BULLISH,
-        PatternType.DOUBLE_BOTTOM,
+        PatternType.DOUBLE_BOTTOM_SELL,  # Double bottom = bullish (SELL signal means price going up)
+        PatternType.DOUBLE_BOTTOM_SELL_EMA,
         PatternType.TRIPLE_BOTTOM_SELL,  # Triple bottom = bullish
+        PatternType.TRIPLE_BOTTOM_SELL_EMA,
         PatternType.QUADRUPLE_BOTTOM_SELL,  # Quadruple bottom = bullish
+        PatternType.QUADRUPLE_BOTTOM_SELL_EMA,
         PatternType.CATAPULT_BUY,
-        PatternType.POLE_FT_BUY,
-        PatternType.TURTLE_BREAKOUT_BUY,
+        PatternType.POLE_FOLLOW_THROUGH_BUY,
+        PatternType.LOW_POLE_FT_BUY,
+        PatternType.TURTLE_BREAKOUT_FT_BUY,
+        PatternType.AFT_ANCHOR_BREAKOUT_BUY,
         PatternType.ZIDDI_BULLS,
         PatternType.TWEEZER_BULLISH,
     }
-    
+
     # Bearish patterns
     BEARISH_PATTERNS = {
         PatternType.ABC_BEARISH,
-        PatternType.DOUBLE_TOP,
+        PatternType.DOUBLE_TOP_BUY,  # Double top = bearish (BUY signal means price going down)
+        PatternType.DOUBLE_TOP_BUY_EMA,
         PatternType.TRIPLE_TOP_BUY,  # Triple top = bearish
+        PatternType.TRIPLE_TOP_BUY_EMA,
         PatternType.QUADRUPLE_TOP_BUY,  # Quadruple top = bearish
+        PatternType.QUADRUPLE_TOP_BUY_EMA,
         PatternType.CATAPULT_SELL,
-        PatternType.POLE_FT_SELL,
-        PatternType.TURTLE_BREAKOUT_SELL,
+        PatternType.POLE_FOLLOW_THROUGH_SELL,
+        PatternType.HIGH_POLE_FT_SELL,
+        PatternType.TURTLE_BREAKOUT_FT_SELL,
+        PatternType.AFT_ANCHOR_BREAKDOWN_SELL,
         PatternType.ZIDDI_BEARS,
         PatternType.TWEEZER_BEARISH,
     }
