@@ -25,7 +25,6 @@ from dataclasses import dataclass, field
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from app import crud, charts, alerts
-from app.telegram_bot import send_enhanced_pattern_telegram
 from logzero import logger
 import redis
 import json
@@ -174,8 +173,24 @@ def check_pnf_alerts_for_stock(symbol: str, instrument_key: str) -> StockAlertRe
         
         alert_triggers = detector.analyze_pattern_formation(x_coords, y_coords, pnf_symbols, closes)
         
+        # Calculate Fibonacci levels for this symbol
+        fib_data = detector._calculate_fibonacci_levels(highs, lows)
+
         # Convert alert triggers to alert dictionaries
         for alert_trigger in alert_triggers:
+            # Get Fibonacci level for this alert price
+            fibonacci_level = None
+            if fib_data:
+                fibonacci_level = detector._get_fibonacci_level_for_price(alert_trigger.price, fib_data)
+
+            # Determine environment
+            import os
+            environment = "LOCAL"  # Default
+            if os.getenv("ENVIRONMENT") == "PRODUCTION":
+                environment = "PRODUCTION"
+            elif os.getenv("ENVIRONMENT") == "TEST":
+                environment = "TEST"
+
             alert_dict = {
                 'type': alert_trigger.pattern_type.value.replace('_', ' ').title(),
                 'signal_price': alert_trigger.price,
@@ -184,7 +199,10 @@ def check_pnf_alerts_for_stock(symbol: str, instrument_key: str) -> StockAlertRe
                 'column': alert_trigger.column,
                 'trigger_reason': alert_trigger.trigger_reason,
                 'is_first_occurrence': alert_trigger.is_first_occurrence,
-                'is_super_alert': getattr(alert_trigger, 'is_super_alert', False)
+                'is_super_alert': getattr(alert_trigger, 'is_super_alert', False),
+                'fibonacci_level': fibonacci_level,
+                'environment': environment,
+                'pnf_matrix_score': getattr(alert_trigger, 'pnf_matrix_score', None)
             }
             result.alerts.append(alert_dict)
         
@@ -290,7 +308,7 @@ def save_and_notify_combined_alerts(symbol: str, instrument_key: str, alerts: Li
         settings = crud.get_settings()
         alert_ids = []
 
-        # Save all alerts to database
+        # Save all alerts to database (without sending Telegram - we'll send combined notification)
         for alert in alerts:
             alert_data = {
                 'alert_type': alert.get('alert_type', 'BUY'),
@@ -300,10 +318,15 @@ def save_and_notify_combined_alerts(symbol: str, instrument_key: str, alerts: Li
                 'trigger_reason': alert.get('trigger_reason', ''),
                 'column': alert.get('column'),
                 'volume': alert.get('volume'),
-                'market_conditions': alert.get('market_conditions')
+                'market_conditions': alert.get('market_conditions'),
+                'fibonacci_level': alert.get('fibonacci_level'),
+                'environment': alert.get('environment', 'LOCAL'),
+                'pnf_matrix_score': alert.get('pnf_matrix_score'),
+                'is_super_alert': alert.get('is_super_alert', False)
             }
 
-            alert_id = save_alert(symbol, instrument_key, alert_data)
+            # Pass send_telegram=False to avoid duplicate notifications
+            alert_id = save_alert(symbol, instrument_key, alert_data, send_telegram=False)
             if alert_id:
                 alert_ids.append(alert_id)
 
@@ -346,11 +369,27 @@ def send_combined_telegram_notification(symbol: str, instrument_key: str, alerts
     """
     try:
         from app.telegram_notifier import telegram_notifier
+        import datetime
 
         if len(alerts) == 1:
-            # Single alert - use standard format
+            # Single alert - use telegram_notifier.send_trading_alert for consistency
             alert = alerts[0]
-            send_enhanced_pattern_telegram(symbol, alert)
+            telegram_notifier.send_trading_alert(
+                symbol=symbol,
+                instrument_key=instrument_key,
+                pattern_type=alert.get('pattern_type', 'unknown'),
+                pattern_name=alert.get('type', 'Unknown Pattern'),
+                alert_type=alert.get('alert_type', 'BUY'),
+                signal_price=alert.get('signal_price', 0),
+                matrix_score=alert.get('pnf_matrix_score'),
+                is_super_alert=alert.get('is_super_alert', False),
+                box_size=0.0025,
+                interval="1minute",
+                time_range="2months",
+                trigger_reason=alert.get('trigger_reason', ''),
+                timestamp=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
+            )
+            logger.info(f"✅ Sent single Telegram notification for {symbol}")
             return
 
         # Multiple alerts - create combined message

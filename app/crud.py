@@ -341,14 +341,16 @@ def get_all_stocks() -> list:
     ]
 
 # --- Alert Functions ---
-def save_alert(symbol: str, instrument_key: str, alert_data: dict) -> str:
+def save_alert(symbol: str, instrument_key: str, alert_data: dict, send_telegram: bool = True) -> str:
     """
-    Save an alert to MongoDB and send Telegram notification.
+    Save an alert to MongoDB and optionally send Telegram notification.
 
     Args:
         symbol: Trading symbol
         instrument_key: Dhan instrument key
         alert_data: Alert data from pattern detector
+        send_telegram: Whether to send Telegram notification (default: True)
+                      Set to False when called from parallel scheduler to avoid duplicates
 
     Returns:
         Alert ID if saved successfully, None otherwise
@@ -385,6 +387,16 @@ def save_alert(symbol: str, instrument_key: str, alert_data: dict) -> str:
                     fibonacci_level = keyword
                     break
 
+        # Get environment from alert_data or detect from environment variable
+        environment = alert_data.get('environment')
+        if not environment:
+            import os
+            environment = "LOCAL"  # Default
+            if os.getenv("ENVIRONMENT") == "PRODUCTION":
+                environment = "PRODUCTION"
+            elif os.getenv("ENVIRONMENT") == "TEST":
+                environment = "TEST"
+
         # Create alert document
         alert_timestamp = datetime.utcnow()
         alert_doc = {
@@ -395,12 +407,13 @@ def save_alert(symbol: str, instrument_key: str, alert_data: dict) -> str:
             "pattern_name": pattern_name,
             "signal_price": signal_price,
             "trigger_reason": trigger_reason,
-            "is_super_alert": is_super_alert,
-            "pnf_matrix_score": pnf_matrix_score,
-            "fibonacci_level": fibonacci_level,
+            "is_super_alert": alert_data.get('is_super_alert', is_super_alert),
+            "pnf_matrix_score": alert_data.get('pnf_matrix_score') or pnf_matrix_score,
+            "fibonacci_level": alert_data.get('fibonacci_level') or fibonacci_level,
             "column_number": alert_data.get('column'),
             "volume_at_alert": alert_data.get('volume'),
             "market_conditions": alert_data.get('market_conditions'),
+            "environment": environment,
             "timestamp": alert_timestamp,
             "accuracy_checked": False,
             "outcome": None,
@@ -408,6 +421,9 @@ def save_alert(symbol: str, instrument_key: str, alert_data: dict) -> str:
             "outcome_date": None,
             "profit_loss_percent": None,
             "days_to_outcome": None,
+            "validation_status": "PENDING",
+            "validated_by": None,
+            "validation_date": None,
             "notes": None
         }
 
@@ -417,7 +433,8 @@ def save_alert(symbol: str, instrument_key: str, alert_data: dict) -> str:
         logger.info(f"✅ Alert saved to MongoDB in {db_save_time*1000:.2f}ms: {symbol} - {pattern_name} @ ₹{signal_price}")
 
         # Send Telegram notification (non-blocking, with retry)
-        if TELEGRAM_AVAILABLE:
+        # Only send if send_telegram=True (to avoid duplicates from parallel scheduler)
+        if send_telegram and TELEGRAM_AVAILABLE:
             try:
                 telegram_start = time.time()
                 success = send_trading_alert(
@@ -445,6 +462,8 @@ def save_alert(symbol: str, instrument_key: str, alert_data: dict) -> str:
             except Exception as telegram_error:
                 logger.error(f"❌ Telegram notification error: {telegram_error}")
                 # Don't fail the alert save if Telegram fails
+        elif not send_telegram:
+            logger.debug(f"📱 Telegram notification skipped (handled by scheduler)")
 
         total_time = time.time() - start_time
         logger.info(f"⏱️ Total alert processing time: {total_time*1000:.2f}ms")
@@ -711,3 +730,761 @@ def get_pattern_performance() -> dict:
     except Exception as e:
         logger.error(f"❌ Error fetching pattern performance from MongoDB: {e}")
         return {'pattern_performance': []}
+
+# --- Pattern Validation Functions ---
+
+def get_alerts_with_filters(filters: models.AlertFilters) -> List[models.AlertResponse]:
+    """Get alerts with enhanced filtering for validation dashboard."""
+    try:
+        # Use the alerts collection from mongo_service
+        collection = alerts_collection
+
+        # Build query
+        query = {}
+
+        if filters.symbol:
+            query["symbol"] = {"$regex": filters.symbol, "$options": "i"}
+        if filters.alert_type and filters.alert_type != "ALL":
+            query["alert_type"] = filters.alert_type
+        if filters.pattern_type:
+            query["pattern_type"] = {"$regex": filters.pattern_type, "$options": "i"}
+        if filters.is_super_alert is not None:
+            query["is_super_alert"] = filters.is_super_alert
+        if filters.outcome and filters.outcome != "ALL":
+            query["outcome"] = filters.outcome
+        if filters.validation_status and filters.validation_status != "ALL":
+            query["validation_status"] = filters.validation_status
+        if filters.environment and filters.environment != "ALL":
+            query["environment"] = filters.environment
+        if filters.fibonacci_level:
+            query["fibonacci_level"] = filters.fibonacci_level
+
+        # Date range filter
+        if filters.start_date or filters.end_date:
+            date_query = {}
+            if filters.start_date:
+                if isinstance(filters.start_date, str):
+                    date_query["$gte"] = datetime.fromisoformat(filters.start_date.replace('Z', '+00:00'))
+                else:
+                    date_query["$gte"] = filters.start_date
+            if filters.end_date:
+                if isinstance(filters.end_date, str):
+                    date_query["$lte"] = datetime.fromisoformat(filters.end_date.replace('Z', '+00:00'))
+                else:
+                    date_query["$lte"] = filters.end_date
+            query["timestamp"] = date_query
+
+        # Execute query with pagination
+        cursor = collection.find(query).sort("timestamp", -1).skip(filters.offset).limit(filters.limit)
+
+        alerts = []
+        for doc in cursor:
+            try:
+                # Convert MongoDB document to dictionary
+                doc['id'] = str(doc['_id'])
+                del doc['_id']
+
+                # Ensure all required fields have default values for backward compatibility
+                doc.setdefault('environment', 'LOCAL')
+                doc.setdefault('validation_status', 'PENDING')
+                doc.setdefault('validated_by', None)
+                doc.setdefault('validation_date', None)
+                doc.setdefault('fibonacci_level', None)
+                doc.setdefault('pnf_matrix_score', None)
+                doc.setdefault('column_number', None)
+                doc.setdefault('accuracy_checked', False)
+                doc.setdefault('outcome', None)
+                doc.setdefault('outcome_price', None)
+                doc.setdefault('outcome_date', None)
+                doc.setdefault('profit_loss_percent', None)
+                doc.setdefault('days_to_outcome', None)
+                doc.setdefault('market_conditions', None)
+                doc.setdefault('volume_at_alert', None)
+                doc.setdefault('notes', None)
+
+                # Ensure required fields exist
+                doc.setdefault('symbol', 'UNKNOWN')
+                doc.setdefault('alert_type', 'BUY')
+                doc.setdefault('pattern_type', 'unknown')
+                doc.setdefault('pattern_name', doc.get('pattern_type', 'unknown'))
+                doc.setdefault('signal_price', 0.0)
+                doc.setdefault('trigger_reason', 'No reason provided')
+                doc.setdefault('is_super_alert', False)
+                doc.setdefault('timestamp', datetime.utcnow())
+
+                # Add the document as dictionary (no need for Pydantic model conversion)
+                alerts.append(doc)
+
+            except Exception as e:
+                logger.error(f"❌ Error converting alert document: {e}")
+                logger.error(f"Document: {doc}")
+                continue
+
+        return alerts
+
+    except Exception as e:
+        logger.error(f"❌ Error fetching alerts with filters: {e}")
+        return []
+
+def get_alerts_count_with_filters(filters: models.AlertFilters) -> int:
+    """Get total count of alerts matching filters."""
+    try:
+        # Use the alerts collection from mongo_service
+        collection = alerts_collection
+
+        # Build same query as get_alerts_with_filters
+        query = {}
+
+        if filters.symbol:
+            query["symbol"] = {"$regex": filters.symbol, "$options": "i"}
+        if filters.alert_type and filters.alert_type != "ALL":
+            query["alert_type"] = filters.alert_type
+        if filters.pattern_type:
+            query["pattern_type"] = {"$regex": filters.pattern_type, "$options": "i"}
+        if filters.is_super_alert is not None:
+            query["is_super_alert"] = filters.is_super_alert
+        if filters.outcome and filters.outcome != "ALL":
+            query["outcome"] = filters.outcome
+        if filters.validation_status and filters.validation_status != "ALL":
+            query["validation_status"] = filters.validation_status
+        if filters.environment and filters.environment != "ALL":
+            query["environment"] = filters.environment
+        if filters.fibonacci_level:
+            query["fibonacci_level"] = filters.fibonacci_level
+
+        # Date range filter
+        if filters.start_date or filters.end_date:
+            date_query = {}
+            if filters.start_date:
+                if isinstance(filters.start_date, str):
+                    date_query["$gte"] = datetime.fromisoformat(filters.start_date.replace('Z', '+00:00'))
+                else:
+                    date_query["$gte"] = filters.start_date
+            if filters.end_date:
+                if isinstance(filters.end_date, str):
+                    date_query["$lte"] = datetime.fromisoformat(filters.end_date.replace('Z', '+00:00'))
+                else:
+                    date_query["$lte"] = filters.end_date
+            query["timestamp"] = date_query
+
+        return collection.count_documents(query)
+
+    except Exception as e:
+        logger.error(f"❌ Error counting alerts with filters: {e}")
+        return 0
+
+def update_alert_validation(alert_id: str, validation_status: str, notes: str = None, validated_by: str = None) -> bool:
+    """Update alert validation status."""
+    try:
+        # Use the alerts collection from mongo_service
+        collection = alerts_collection
+
+        update_data = {
+            "validation_status": validation_status,
+            "validation_date": datetime.utcnow()
+        }
+
+        if notes:
+            update_data["notes"] = notes
+        if validated_by:
+            update_data["validated_by"] = validated_by
+
+        result = collection.update_one(
+            {"_id": ObjectId(alert_id)},
+            {"$set": update_data}
+        )
+
+        return result.modified_count > 0
+
+    except Exception as e:
+        logger.error(f"❌ Error updating alert validation: {e}")
+        return False
+
+def get_pattern_analytics(start_date: str = None, end_date: str = None, environment: str = None) -> List[dict]:
+    """Get pattern performance analytics with Redis caching."""
+    try:
+        # Create cache key
+        cache_key = f"pattern_analytics:{start_date or 'all'}:{end_date or 'all'}:{environment or 'all'}"
+
+        # Try to get from cache first
+        if redis_client:
+            cached_result = redis_client.get(cache_key)
+            if cached_result:
+                import json
+                logger.info(f"📊 Returning cached pattern analytics for {cache_key}")
+                return json.loads(cached_result)
+
+        # Use the alerts collection from mongo_service
+        collection = alerts_collection
+
+        # Build match query
+        match_query = {}
+
+        if start_date or end_date:
+            date_query = {}
+            if start_date:
+                date_query["$gte"] = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            if end_date:
+                date_query["$lte"] = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            match_query["timestamp"] = date_query
+
+        if environment and environment != "ALL":
+            match_query["environment"] = environment
+
+        # Aggregation pipeline for pattern analytics
+        pipeline = [
+            {"$match": match_query},
+            {
+                "$group": {
+                    "_id": {
+                        "pattern_type": "$pattern_type",
+                        "environment": "$environment"
+                    },
+                    "total_alerts": {"$sum": 1},
+                    "success_count": {
+                        "$sum": {"$cond": [{"$eq": ["$outcome", "SUCCESS"]}, 1, 0]}
+                    },
+                    "failure_count": {
+                        "$sum": {"$cond": [{"$eq": ["$outcome", "FAILURE"]}, 1, 0]}
+                    },
+                    "avg_profit_loss": {"$avg": "$profit_loss_percent"},
+                    "avg_days_to_outcome": {"$avg": "$days_to_outcome"},
+                    "fibonacci_levels": {"$push": "$fibonacci_level"}
+                }
+            },
+            {
+                "$project": {
+                    "pattern_type": "$_id.pattern_type",
+                    "environment": "$_id.environment",
+                    "total_alerts": 1,
+                    "success_count": 1,
+                    "failure_count": 1,
+                    "success_rate": {
+                        "$cond": [
+                            {"$gt": [{"$add": ["$success_count", "$failure_count"]}, 0]},
+                            {"$multiply": [
+                                {"$divide": ["$success_count", {"$add": ["$success_count", "$failure_count"]}]},
+                                100
+                            ]},
+                            0
+                        ]
+                    },
+                    "avg_profit_loss": {"$ifNull": ["$avg_profit_loss", 0]},
+                    "avg_days_to_outcome": {"$ifNull": ["$avg_days_to_outcome", 0]},
+                    "fibonacci_levels": 1
+                }
+            },
+            {"$sort": {"success_rate": -1}}
+        ]
+
+        analytics = list(collection.aggregate(pipeline))
+
+        # Process fibonacci level performance
+        for analytic in analytics:
+            fib_levels = [level for level in analytic.get('fibonacci_levels', []) if level]
+            fib_performance = {}
+            for level in set(fib_levels):
+                count = fib_levels.count(level)
+                fib_performance[level] = {
+                    "count": count,
+                    "percentage": (count / len(fib_levels) * 100) if fib_levels else 0
+                }
+            analytic['fibonacci_level_performance'] = fib_performance
+            del analytic['fibonacci_levels']
+
+        # Cache the result for 5 minutes
+        if redis_client and analytics:
+            import json
+            redis_client.setex(cache_key, 300, json.dumps(analytics))  # 5 minutes cache
+            logger.info(f"📊 Cached pattern analytics for {cache_key}")
+
+        return analytics
+
+    except Exception as e:
+        logger.error(f"❌ Error fetching pattern analytics: {e}")
+        return []
+
+def get_daily_pattern_summary(date: str) -> dict:
+    """Get daily pattern summary for specified date with Redis caching."""
+    try:
+        # Create cache key
+        cache_key = f"daily_summary:{date}"
+
+        # Try to get from cache first
+        if redis_client:
+            cached_result = redis_client.get(cache_key)
+            if cached_result:
+                import json
+                logger.info(f"📊 Returning cached daily summary for {date}")
+                return json.loads(cached_result)
+
+        # Use the alerts collection from mongo_service
+        collection = alerts_collection
+
+        # Parse date and create date range for the day
+        target_date = datetime.fromisoformat(date.replace('Z', '+00:00'))
+        start_of_day = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = target_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        # Aggregation pipeline for daily summary
+        pipeline = [
+            {
+                "$match": {
+                    "timestamp": {"$gte": start_of_day, "$lte": end_of_day}
+                }
+            },
+            {
+                "$group": {
+                    "_id": None,
+                    "total_alerts": {"$sum": 1},
+                    "buy_alerts": {
+                        "$sum": {"$cond": [{"$eq": ["$alert_type", "BUY"]}, 1, 0]}
+                    },
+                    "sell_alerts": {
+                        "$sum": {"$cond": [{"$eq": ["$alert_type", "SELL"]}, 1, 0]}
+                    },
+                    "super_alerts": {
+                        "$sum": {"$cond": ["$is_super_alert", 1, 0]}
+                    },
+                    "patterns": {"$push": "$pattern_type"},
+                    "environments": {"$push": "$environment"},
+                    "validations": {"$push": "$validation_status"},
+                    "outcomes": {"$push": "$outcome"}
+                }
+            }
+        ]
+
+        result = list(collection.aggregate(pipeline))
+
+        if not result:
+            return {
+                "date": date,
+                "total_alerts": 0,
+                "buy_alerts": 0,
+                "sell_alerts": 0,
+                "super_alerts": 0,
+                "pattern_breakdown": {},
+                "environment_breakdown": {},
+                "validation_breakdown": {},
+                "outcome_breakdown": {}
+            }
+
+        data = result[0]
+
+        # Calculate breakdowns
+        pattern_breakdown = {}
+        for pattern in data.get('patterns', []):
+            pattern_breakdown[pattern] = pattern_breakdown.get(pattern, 0) + 1
+
+        environment_breakdown = {}
+        for env in data.get('environments', []):
+            environment_breakdown[env] = environment_breakdown.get(env, 0) + 1
+
+        validation_breakdown = {}
+        for validation in data.get('validations', []):
+            if validation:
+                validation_breakdown[validation] = validation_breakdown.get(validation, 0) + 1
+
+        outcome_breakdown = {}
+        for outcome in data.get('outcomes', []):
+            if outcome:
+                outcome_breakdown[outcome] = outcome_breakdown.get(outcome, 0) + 1
+
+        return {
+            "date": date,
+            "total_alerts": data.get('total_alerts', 0),
+            "buy_alerts": data.get('buy_alerts', 0),
+            "sell_alerts": data.get('sell_alerts', 0),
+            "super_alerts": data.get('super_alerts', 0),
+            "pattern_breakdown": pattern_breakdown,
+            "environment_breakdown": environment_breakdown,
+            "validation_breakdown": validation_breakdown,
+            "outcome_breakdown": outcome_breakdown
+        }
+
+        # Cache the result for 1 hour (daily data doesn't change frequently)
+        if redis_client:
+            import json
+            redis_client.setex(cache_key, 3600, json.dumps(summary))  # 1 hour cache
+            logger.info(f"📊 Cached daily summary for {date}")
+
+        return summary
+
+    except Exception as e:
+        logger.error(f"❌ Error fetching daily summary: {e}")
+        return {
+            "date": date,
+            "total_alerts": 0,
+            "buy_alerts": 0,
+            "sell_alerts": 0,
+            "super_alerts": 0,
+            "pattern_breakdown": {},
+            "environment_breakdown": {},
+            "validation_breakdown": {},
+            "outcome_breakdown": {}
+        }
+
+def export_alerts_to_csv(filters: models.AlertFilters) -> str:
+    """Export alerts to CSV format."""
+    try:
+        import csv
+        import io
+
+        alerts = get_alerts_with_filters(filters)
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Write header
+        writer.writerow([
+            'Symbol', 'Alert Type', 'Pattern Type', 'Pattern Name', 'Signal Price',
+            'Timestamp', 'Environment', 'Is Super Alert', 'Fibonacci Level',
+            'Validation Status', 'Outcome', 'Profit/Loss %', 'Days to Outcome',
+            'Validated By', 'Notes', 'Trigger Reason'
+        ])
+
+        # Write data
+        for alert in alerts:
+            writer.writerow([
+                alert.symbol,
+                alert.alert_type,
+                alert.pattern_type,
+                alert.pattern_name,
+                alert.signal_price,
+                alert.timestamp.isoformat() if alert.timestamp else '',
+                alert.environment,
+                'Yes' if alert.is_super_alert else 'No',
+                alert.fibonacci_level or '',
+                alert.validation_status or '',
+                alert.outcome or '',
+                alert.profit_loss_percent or '',
+                alert.days_to_outcome or '',
+                alert.validated_by or '',
+                alert.notes or '',
+                alert.trigger_reason
+            ])
+
+        return output.getvalue()
+
+    except Exception as e:
+        logger.error(f"❌ Error exporting alerts to CSV: {e}")
+        return ""
+
+def ensure_pattern_validation_indexes():
+    """Ensure proper database indexes for pattern validation queries."""
+    try:
+        # Use the alerts collection from mongo_service
+        collection = alerts_collection
+
+        # Create indexes for common query patterns
+        indexes_to_create = [
+            # Single field indexes
+            ("timestamp", -1),  # Descending for recent alerts first
+            ("symbol", 1),
+            ("alert_type", 1),
+            ("pattern_type", 1),
+            ("environment", 1),
+            ("validation_status", 1),
+            ("outcome", 1),
+            ("fibonacci_level", 1),
+            ("is_super_alert", 1),
+
+            # Compound indexes for common filter combinations
+            [("timestamp", -1), ("environment", 1)],
+            [("timestamp", -1), ("alert_type", 1)],
+            [("timestamp", -1), ("pattern_type", 1)],
+            [("symbol", 1), ("timestamp", -1)],
+            [("environment", 1), ("pattern_type", 1)],
+            [("validation_status", 1), ("timestamp", -1)],
+            [("outcome", 1), ("timestamp", -1)],
+            [("fibonacci_level", 1), ("alert_type", 1)],
+        ]
+
+        for index_spec in indexes_to_create:
+            try:
+                if isinstance(index_spec, tuple):
+                    # Single field index
+                    collection.create_index([index_spec])
+                else:
+                    # Compound index
+                    collection.create_index(index_spec)
+                logger.info(f"✅ Created index: {index_spec}")
+            except Exception as e:
+                # Index might already exist
+                logger.debug(f"Index creation skipped (may already exist): {index_spec} - {e}")
+
+        logger.info("📊 Pattern validation database indexes ensured")
+
+    except Exception as e:
+        logger.error(f"❌ Error ensuring pattern validation indexes: {e}")
+
+def clear_pattern_validation_cache():
+    """Clear all pattern validation related cache entries."""
+    try:
+        if not redis_client:
+            return
+
+        # Get all cache keys related to pattern validation
+        cache_patterns = [
+            "pattern_analytics:*",
+            "daily_summary:*"
+        ]
+
+        deleted_count = 0
+        for pattern in cache_patterns:
+            keys = redis_client.keys(pattern)
+            if keys:
+                deleted_count += redis_client.delete(*keys)
+
+        logger.info(f"🗑️ Cleared {deleted_count} pattern validation cache entries")
+        return deleted_count
+
+    except Exception as e:
+        logger.error(f"❌ Error clearing pattern validation cache: {e}")
+        return 0
+
+def get_alert_by_id(alert_id: str) -> dict:
+    """Get a specific alert by its ID."""
+    try:
+        # Use the alerts collection from mongo_service
+        collection = alerts_collection
+
+        # Find the alert by ID
+        doc = collection.find_one({"_id": ObjectId(alert_id)})
+
+        if not doc:
+            return None
+
+        # Convert MongoDB document to dictionary
+        doc['id'] = str(doc['_id'])
+        del doc['_id']
+
+        # Ensure all fields have default values for backward compatibility
+        doc.setdefault('environment', 'LOCAL')
+        doc.setdefault('validation_status', 'PENDING')
+        doc.setdefault('validated_by', None)
+        doc.setdefault('validation_date', None)
+        doc.setdefault('fibonacci_level', None)
+        doc.setdefault('pnf_matrix_score', None)
+        doc.setdefault('column_number', None)
+        doc.setdefault('accuracy_checked', False)
+        doc.setdefault('outcome', None)
+        doc.setdefault('outcome_price', None)
+        doc.setdefault('outcome_date', None)
+        doc.setdefault('profit_loss_percent', None)
+        doc.setdefault('days_to_outcome', None)
+        doc.setdefault('market_conditions', None)
+        doc.setdefault('volume_at_alert', None)
+        doc.setdefault('notes', None)
+
+        return doc
+
+    except Exception as e:
+        logger.error(f"❌ Error fetching alert by ID {alert_id}: {e}")
+        return None
+
+def get_detailed_pattern_analysis(pattern_type: str = None, start_date: str = None, end_date: str = None, environment: str = None) -> dict:
+    """Get detailed pattern analysis with individual alert breakdown."""
+    try:
+        # Use the alerts collection from mongo_service
+        collection = alerts_collection
+
+        # Build match query
+        match_query = {}
+
+        if pattern_type:
+            match_query["pattern_type"] = pattern_type
+
+        if start_date or end_date:
+            date_query = {}
+            if start_date:
+                date_query["$gte"] = datetime.fromisoformat(start_date + 'T00:00:00')
+            if end_date:
+                date_query["$lte"] = datetime.fromisoformat(end_date + 'T23:59:59')
+            match_query["timestamp"] = date_query
+
+        if environment and environment != "ALL":
+            match_query["environment"] = environment
+
+        # Get all matching alerts
+        alerts = list(collection.find(match_query).sort("timestamp", -1))
+
+        # Process alerts for analysis
+        analysis = {
+            "pattern_type": pattern_type or "ALL",
+            "total_alerts": len(alerts),
+            "success_count": 0,
+            "failure_count": 0,
+            "pending_count": 0,
+            "avg_profit_loss": 0,
+            "avg_days_to_outcome": 0,
+            "success_rate": 0,
+            "win_loss_ratio": 0,
+            "confidence_level": "LOW",
+            "alerts_by_symbol": {},
+            "alerts_by_date": {},
+            "fibonacci_performance": {},
+            "environment_breakdown": {},
+            "recent_alerts": []
+        }
+
+        if not alerts:
+            return analysis
+
+        # Process each alert
+        total_profit_loss = 0
+        total_days = 0
+        profit_loss_count = 0
+        days_count = 0
+
+        for alert in alerts:
+            # Convert ObjectId to string
+            alert['id'] = str(alert['_id'])
+            del alert['_id']
+
+            # Count outcomes
+            outcome = alert.get('outcome')
+            if outcome == 'SUCCESS':
+                analysis['success_count'] += 1
+            elif outcome == 'FAILURE':
+                analysis['failure_count'] += 1
+            else:
+                analysis['pending_count'] += 1
+
+            # Accumulate profit/loss
+            if alert.get('profit_loss_percent') is not None:
+                total_profit_loss += alert['profit_loss_percent']
+                profit_loss_count += 1
+
+            # Accumulate days to outcome
+            if alert.get('days_to_outcome') is not None:
+                total_days += alert['days_to_outcome']
+                days_count += 1
+
+            # Group by symbol
+            symbol = alert.get('symbol', 'UNKNOWN')
+            if symbol not in analysis['alerts_by_symbol']:
+                analysis['alerts_by_symbol'][symbol] = {
+                    'count': 0,
+                    'success': 0,
+                    'failure': 0,
+                    'pending': 0
+                }
+            analysis['alerts_by_symbol'][symbol]['count'] += 1
+            if outcome == 'SUCCESS':
+                analysis['alerts_by_symbol'][symbol]['success'] += 1
+            elif outcome == 'FAILURE':
+                analysis['alerts_by_symbol'][symbol]['failure'] += 1
+            else:
+                analysis['alerts_by_symbol'][symbol]['pending'] += 1
+
+            # Group by date
+            date_str = alert.get('timestamp', datetime.now()).strftime('%Y-%m-%d')
+            if date_str not in analysis['alerts_by_date']:
+                analysis['alerts_by_date'][date_str] = 0
+            analysis['alerts_by_date'][date_str] += 1
+
+            # Fibonacci level performance
+            fib_level = alert.get('fibonacci_level')
+            if fib_level:
+                if fib_level not in analysis['fibonacci_performance']:
+                    analysis['fibonacci_performance'][fib_level] = {
+                        'count': 0,
+                        'success': 0,
+                        'success_rate': 0
+                    }
+                analysis['fibonacci_performance'][fib_level]['count'] += 1
+                if outcome == 'SUCCESS':
+                    analysis['fibonacci_performance'][fib_level]['success'] += 1
+
+            # Environment breakdown
+            env = alert.get('environment', 'LOCAL')
+            if env not in analysis['environment_breakdown']:
+                analysis['environment_breakdown'][env] = {
+                    'count': 0,
+                    'success': 0,
+                    'success_rate': 0
+                }
+            analysis['environment_breakdown'][env]['count'] += 1
+            if outcome == 'SUCCESS':
+                analysis['environment_breakdown'][env]['success'] += 1
+
+        # Calculate averages and rates
+        if profit_loss_count > 0:
+            analysis['avg_profit_loss'] = total_profit_loss / profit_loss_count
+
+        if days_count > 0:
+            analysis['avg_days_to_outcome'] = total_days / days_count
+
+        total_decided = analysis['success_count'] + analysis['failure_count']
+        if total_decided > 0:
+            analysis['success_rate'] = (analysis['success_count'] / total_decided) * 100
+            analysis['win_loss_ratio'] = analysis['success_count'] / max(analysis['failure_count'], 1)
+
+        # Determine confidence level
+        if analysis['success_rate'] >= 60:
+            analysis['confidence_level'] = "HIGH"
+        elif analysis['success_rate'] >= 45:
+            analysis['confidence_level'] = "MEDIUM"
+        else:
+            analysis['confidence_level'] = "LOW"
+
+        # Calculate Fibonacci performance rates
+        for fib_level in analysis['fibonacci_performance']:
+            fib_data = analysis['fibonacci_performance'][fib_level]
+            if fib_data['count'] > 0:
+                fib_data['success_rate'] = (fib_data['success'] / fib_data['count']) * 100
+
+        # Calculate environment performance rates
+        for env in analysis['environment_breakdown']:
+            env_data = analysis['environment_breakdown'][env]
+            if env_data['count'] > 0:
+                env_data['success_rate'] = (env_data['success'] / env_data['count']) * 100
+
+        # Get recent alerts (last 10)
+        analysis['recent_alerts'] = alerts[:10]
+
+        return analysis
+
+    except Exception as e:
+        logger.error(f"❌ Error getting detailed pattern analysis: {e}")
+        return {
+            "pattern_type": pattern_type or "ALL",
+            "total_alerts": 0,
+            "success_count": 0,
+            "failure_count": 0,
+            "pending_count": 0,
+            "error": str(e)
+        }
+
+def get_available_stocks() -> List[str]:
+    """Get list of unique stock symbols from alerts."""
+    try:
+        # Use the alerts collection from mongo_service
+        collection = alerts_collection
+
+        # Get distinct symbols
+        stocks = collection.distinct("symbol")
+
+        # Sort and return
+        return sorted([stock for stock in stocks if stock])
+
+    except Exception as e:
+        logger.error(f"❌ Error fetching available stocks: {e}")
+        return []
+
+def get_available_patterns() -> List[str]:
+    """Get list of unique pattern types from alerts."""
+    try:
+        # Use the alerts collection from mongo_service
+        collection = alerts_collection
+
+        # Get distinct pattern types
+        patterns = collection.distinct("pattern_type")
+
+        # Sort and return
+        return sorted([pattern for pattern in patterns if pattern])
+
+    except Exception as e:
+        logger.error(f"❌ Error fetching available patterns: {e}")
+        return []
