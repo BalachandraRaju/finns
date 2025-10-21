@@ -122,51 +122,64 @@ def generate_bearish_breakdown_pattern() -> List[Dict[str, Any]]:
     return candles
 
 def generate_quadruple_top_pattern() -> List[Dict[str, Any]]:
-    """Generate dummy data for a quadruple top buy with follow through pattern."""
+    """
+    Generate dummy data for a quadruple top buy with follow through pattern based on P&F definition.
+
+    CORRECT Pattern: X-O-X-O-X-O-X-O-X (9 columns) where:
+    - Columns 1, 3, 5, 7 have EQUAL tops (base pattern formation)
+    - Column 9 breaks ABOVE the resistance (follow-through breakout)
+
+    With 0.25% box size and 3-box reversal:
+    - Need 3 × 0.25% = 0.75% move to reverse direction
+    - Starting at 100, 0.75% = 0.75 points
+
+    Strategy: Create 9 distinct columns with proper equal tops + breakout
+    """
     candles = []
 
-    # Create a quadruple top pattern followed by breakout with follow-through
+    # Quadruple Top Buy with Follow Through Pattern - 9 columns: X-O-X-O-X-O-X-O-X
     prices = [
-        # First top formation
-        (100, 102, 99, 101),   # Day 1 - Building up
-        (101, 104, 100, 103),  # Day 2
-        (103, 106, 102, 105),  # Day 3
-        (105, 108, 104, 107),  # Day 4
-        (107, 110, 106, 109),  # Day 5 - First top at 110
-        # Pullback from first top
-        (109, 110, 106, 107),  # Day 6 - Pullback starts
-        (107, 108, 104, 105),  # Day 7
-        (105, 106, 102, 103),  # Day 8 - Valley after first top
-        # Second top formation
-        (103, 105, 102, 104),  # Day 9 - Building second top
-        (104, 107, 103, 106),  # Day 10
-        (106, 109, 105, 108),  # Day 11
-        (108, 110, 107, 109),  # Day 12 - Second top at 110
-        # Pullback from second top
-        (109, 110, 106, 107),  # Day 13 - Pullback starts
-        (107, 108, 104, 105),  # Day 14
-        (105, 106, 102, 103),  # Day 15 - Valley after second top
-        # Third top formation
-        (103, 105, 102, 104),  # Day 16 - Building third top
-        (104, 107, 103, 106),  # Day 17
-        (106, 109, 105, 108),  # Day 18
-        (108, 110, 107, 109),  # Day 19 - Third top at 110
-        # Pullback from third top
-        (109, 110, 106, 107),  # Day 20 - Pullback starts
-        (107, 108, 104, 105),  # Day 21
-        (105, 106, 102, 103),  # Day 22 - Valley after third top
-        # Fourth top formation
-        (103, 105, 102, 104),  # Day 23 - Building fourth top
-        (104, 107, 103, 106),  # Day 24
-        (106, 109, 105, 108),  # Day 25
-        (108, 110, 107, 109),  # Day 26 - Fourth top at 110 (quadruple top complete)
-        # Breakout with follow-through
-        (109, 117, 108, 116),  # Day 27 - Breakout above quadruple top resistance
-        (116, 120, 115, 119),  # Day 28 - Strong follow-through
-        (119, 123, 118, 122),  # Day 29 - Continued momentum
-        (122, 126, 121, 125),  # Day 30 - Follow-through confirmation
-        (125, 129, 124, 128),  # Day 31 - Extended move
-        (128, 132, 127, 131),  # Day 32 - Ultimate conviction
+        # Column 1: X rises from 100 to 105 (first top)
+        (100.0, 102.0, 100.0, 102.0),  # Day 1: Strong start
+        (102.0, 104.0, 102.0, 104.0),  # Day 2
+        (104.0, 105.0, 104.0, 105.0),  # Day 3: First top at 105
+
+        # Column 2: O falls to 102.5
+        (105.0, 105.0, 103.2, 103.2),  # Day 4: Fall triggers reversal
+        (103.2, 103.2, 102.5, 102.5),  # Day 5: Continue down
+
+        # Column 3: X rises to 105 again (EQUAL to column 1)
+        (102.5, 103.5, 102.5, 103.5),  # Day 6: Rise triggers reversal
+        (103.5, 104.5, 103.5, 104.5),  # Day 7
+        (104.5, 105.0, 104.5, 105.0),  # Day 8: Second top at 105 (EQUAL)
+
+        # Column 4: O falls to 102.5
+        (105.0, 105.0, 103.2, 103.2),  # Day 9: Fall triggers reversal
+        (103.2, 103.2, 102.5, 102.5),  # Day 10: Continue down
+
+        # Column 5: X rises to 105 again (EQUAL to columns 1 & 3)
+        (102.5, 103.5, 102.5, 103.5),  # Day 11: Rise triggers reversal
+        (103.5, 104.5, 103.5, 104.5),  # Day 12
+        (104.5, 105.0, 104.5, 105.0),  # Day 13: Third top at 105 (EQUAL)
+
+        # Column 6: O falls to 102.5
+        (105.0, 105.0, 103.2, 103.2),  # Day 14: Fall triggers reversal
+        (103.2, 103.2, 102.5, 102.5),  # Day 15: Continue down
+
+        # Column 7: X rises to 105 again (EQUAL to columns 1, 3 & 5) - BASE PATTERN COMPLETE
+        (102.5, 103.5, 102.5, 103.5),  # Day 16: Rise triggers reversal
+        (103.5, 104.5, 103.5, 104.5),  # Day 17
+        (104.5, 105.0, 104.5, 105.0),  # Day 18: Fourth top at 105 (EQUAL) - NO BREAKOUT YET
+
+        # Column 8: O falls to 102.5 (start of follow-through setup)
+        (105.0, 105.0, 103.2, 103.2),  # Day 19: Fall triggers reversal
+        (103.2, 103.2, 102.5, 102.5),  # Day 20: Continue down
+
+        # Column 9: X BREAKS ABOVE to 107+ (FOLLOW-THROUGH BREAKOUT!)
+        (102.5, 103.5, 102.5, 103.5),  # Day 21: Rise triggers reversal
+        (103.5, 105.0, 103.5, 105.0),  # Day 22: Pass previous tops
+        (105.0, 106.5, 105.0, 106.5),  # Day 23: BREAKOUT above 105
+        (106.5, 108.0, 106.5, 108.0),  # Day 24: Strong follow-through
     ]
 
     base_date = datetime.datetime.now() - datetime.timedelta(days=len(prices))
@@ -185,51 +198,49 @@ def generate_quadruple_top_pattern() -> List[Dict[str, Any]]:
     return candles
 
 def generate_quadruple_bottom_pattern() -> List[Dict[str, Any]]:
-    """Generate dummy data for a quadruple bottom sell with follow through pattern."""
+    """
+    Generate dummy data for a quadruple bottom sell with follow through pattern based on P&F definition.
+
+    CORRECT Pattern: O-X-O-X-O-X-O-X-O (9 columns) where:
+    - Columns 1, 3, 5, 7 have EQUAL bottoms (base pattern formation)
+    - Column 9 breaks BELOW the support (follow-through breakdown)
+
+    With 0.25% box size, using large price moves for clarity.
+    """
     candles = []
 
-    # Create a quadruple bottom pattern followed by breakdown with follow-through
+    # Quadruple Bottom Sell with Follow Through Pattern - 9 columns: O-X-O-X-O-X-O-X-O
     prices = [
-        # First bottom formation
-        (160, 162, 158, 159),  # Day 1 - Starting high
-        (159, 160, 156, 157),  # Day 2
-        (157, 158, 154, 155),  # Day 3
-        (155, 156, 152, 153),  # Day 4
-        (153, 154, 150, 151),  # Day 5 - First bottom at 150
-        # Rally from first bottom
-        (151, 154, 150, 153),  # Day 6 - Rally starts
-        (153, 156, 152, 155),  # Day 7
-        (155, 158, 154, 157),  # Day 8 - Peak between bottoms
-        # Second bottom formation
-        (157, 158, 155, 156),  # Day 9 - Building second bottom
-        (156, 157, 153, 154),  # Day 10
-        (154, 155, 151, 152),  # Day 11
-        (152, 153, 150, 151),  # Day 12 - Second bottom at 150
-        # Rally from second bottom
-        (151, 154, 150, 153),  # Day 13 - Rally starts
-        (153, 156, 152, 155),  # Day 14
-        (155, 158, 154, 157),  # Day 15 - Peak between bottoms
-        # Third bottom formation
-        (157, 158, 155, 156),  # Day 16 - Building third bottom
-        (156, 157, 153, 154),  # Day 17
-        (154, 155, 151, 152),  # Day 18
-        (152, 153, 150, 151),  # Day 19 - Third bottom at 150
-        # Rally from third bottom
-        (151, 154, 150, 153),  # Day 20 - Rally starts
-        (153, 156, 152, 155),  # Day 21
-        (155, 158, 154, 157),  # Day 22 - Peak between bottoms
-        # Fourth bottom formation
-        (157, 158, 155, 156),  # Day 23 - Building fourth bottom
-        (156, 157, 153, 154),  # Day 24
-        (154, 155, 151, 152),  # Day 25
-        (152, 153, 150, 151),  # Day 26 - Fourth bottom at 150 (quadruple bottom complete)
-        # Breakdown with follow-through
-        (151, 152, 143, 144),  # Day 27 - Breakdown below quadruple bottom support
-        (144, 145, 140, 141),  # Day 28 - Strong follow-through
-        (141, 142, 137, 138),  # Day 29 - Continued momentum
-        (138, 139, 134, 135),  # Day 30 - Follow-through confirmation
-        (135, 136, 131, 132),  # Day 31 - Extended move
-        (132, 133, 128, 129),  # Day 32 - Ultimate conviction
+        # Column 1: O column falling to 95 (first bottom)
+        (105.0, 105.0, 95.0, 95.0),  # Day 1: Fall to 95
+
+        # Column 2: X column rising to 99
+        (95.0, 99.0, 95.0, 99.0),  # Day 2: Rally to 99
+
+        # Column 3: O column falling to 95 again (second bottom - EQUAL to first)
+        (99.0, 99.0, 95.0, 95.0),  # Day 3: Fall to 95 (same level)
+
+        # Column 4: X column rising to 99
+        (95.0, 99.0, 95.0, 99.0),  # Day 4: Rally to 99
+
+        # Column 5: O column falling to 95 again (third bottom - EQUAL to first two)
+        (99.0, 99.0, 95.0, 95.0),  # Day 5: Fall to 95 (same level)
+
+        # Column 6: X column rising to 99
+        (95.0, 99.0, 95.0, 99.0),  # Day 6: Rally to 99
+
+        # Column 7: O column falling to 95 again (fourth bottom - EQUAL to first three) - BASE PATTERN COMPLETE
+        (99.0, 99.0, 95.0, 95.0),  # Day 7: Fall to 95 (same level) - NO BREAKDOWN YET
+
+        # Column 8: X column rising to 99 (start of follow-through setup)
+        (95.0, 99.0, 95.0, 99.0),  # Day 8: Rally to 99
+
+        # Column 9: O column BREAKS BELOW to 92- (FOLLOW-THROUGH BREAKDOWN!)
+        (99.0, 99.0, 92.0, 92.0),  # Day 9: BREAKDOWN below 95 to 92
+
+        # Additional follow-through
+        (92.0, 92.0, 89.0, 89.0),  # Day 10: Continued weakness
+        (89.0, 89.0, 86.0, 86.0),  # Day 11: Extended move
     ]
 
     base_date = datetime.datetime.now() - datetime.timedelta(days=len(prices))
@@ -292,19 +303,21 @@ def generate_double_top_pattern() -> List[Dict[str, Any]]:
 
 def generate_triple_top_pattern() -> List[Dict[str, Any]]:
     """
-    Generate dummy data for a triple top buy pattern based on P&F definition.
+    Generate dummy data for a triple top buy with follow through pattern based on P&F definition.
 
-    Pattern: X-O-X-O-X where columns 1 & 3 have EQUAL tops, column 5 breaks above.
+    CORRECT Pattern: X-O-X-O-X-O-X (7 columns) where:
+    - Columns 1, 3, 5 have EQUAL tops (base pattern formation)
+    - Column 7 breaks ABOVE the resistance (follow-through breakout)
 
     With 0.25% box size and 3-box reversal:
     - Need 3 × 0.25% = 0.75% move to reverse direction
     - Starting at 100, 0.75% = 0.75 points
 
-    Strategy: Start with upward move to ensure first column is X
+    Strategy: Create 7 distinct columns with proper equal tops + breakout
     """
     candles = []
 
-    # Triple Top Buy Pattern - 5 columns: X-O-X-O-X
+    # Triple Top Buy with Follow Through Pattern - 7 columns: X-O-X-O-X-O-X
     prices = [
         # Column 1: X rises from 100 to 105 (first top)
         (100.0, 102.0, 100.0, 102.0),  # Day 1: Strong start
@@ -324,11 +337,20 @@ def generate_triple_top_pattern() -> List[Dict[str, Any]]:
         (105.0, 105.0, 103.2, 103.2),  # Day 9: Fall triggers reversal
         (103.2, 103.2, 102.5, 102.5),  # Day 10: Continue down
 
-        # Column 5: X BREAKS ABOVE to 107+ (triple top breakout!)
+        # Column 5: X rises to 105 again (EQUAL to columns 1 & 3) - BASE PATTERN COMPLETE
         (102.5, 103.5, 102.5, 103.5),  # Day 11: Rise triggers reversal
-        (103.5, 105.0, 103.5, 105.0),  # Day 12: Pass previous tops
-        (105.0, 106.5, 105.0, 106.5),  # Day 13: BREAKOUT above 105
-        (106.5, 108.0, 106.5, 108.0),  # Day 14: Strong follow-through
+        (103.5, 104.5, 103.5, 104.5),  # Day 12
+        (104.5, 105.0, 104.5, 105.0),  # Day 13: Third top at 105 (EQUAL) - NO BREAKOUT YET
+
+        # Column 6: O falls to 102.5 (start of follow-through setup)
+        (105.0, 105.0, 103.2, 103.2),  # Day 14: Fall triggers reversal
+        (103.2, 103.2, 102.5, 102.5),  # Day 15: Continue down
+
+        # Column 7: X BREAKS ABOVE to 107+ (FOLLOW-THROUGH BREAKOUT!)
+        (102.5, 103.5, 102.5, 103.5),  # Day 16: Rise triggers reversal
+        (103.5, 105.0, 103.5, 105.0),  # Day 17: Pass previous tops
+        (105.0, 106.5, 105.0, 106.5),  # Day 18: BREAKOUT above 105
+        (106.5, 108.0, 106.5, 108.0),  # Day 19: Strong follow-through
     ]
 
     base_date = datetime.datetime.now() - datetime.timedelta(days=len(prices))
@@ -348,20 +370,17 @@ def generate_triple_top_pattern() -> List[Dict[str, Any]]:
 
 def generate_triple_bottom_pattern() -> List[Dict[str, Any]]:
     """
-    Generate dummy data for a triple bottom sell pattern based on P&F definition.
+    Generate dummy data for a triple bottom sell with follow through pattern based on P&F definition.
 
-    Pattern: O-X-O-X-O where:
-    - Column 1 (O) reaches support level (e.g., k=7)
-    - Column 2 (X) rallies (e.g., to k=10)
-    - Column 3 (O) reaches SAME support level (k=7) - EQUAL to column 1
-    - Column 4 (X) rallies (e.g., to k=10)
-    - Column 5 (O) BREAKS BELOW support (e.g., to k=5-)
+    CORRECT Pattern: O-X-O-X-O-X-O (7 columns) where:
+    - Columns 1, 3, 5 have EQUAL bottoms (base pattern formation)
+    - Column 7 breaks BELOW the support (follow-through breakdown)
 
     With 0.25% box size, using large price moves for clarity.
     """
     candles = []
 
-    # Triple Bottom Sell Pattern
+    # Triple Bottom Sell with Follow Through Pattern - 7 columns: O-X-O-X-O-X-O
     prices = [
         # Column 1: O column falling to 95 (first bottom)
         (105.0, 105.0, 95.0, 95.0),  # Day 1: Fall to 95
@@ -375,12 +394,18 @@ def generate_triple_bottom_pattern() -> List[Dict[str, Any]]:
         # Column 4: X column rising to 99
         (95.0, 99.0, 95.0, 99.0),  # Day 4: Rally to 99
 
-        # Column 5: O column BREAKS BELOW to 92- (triple bottom breakdown!)
-        (99.0, 99.0, 92.0, 92.0),  # Day 5: BREAKDOWN below 95 to 92
+        # Column 5: O column falling to 95 again (third bottom - EQUAL to first two) - BASE PATTERN COMPLETE
+        (99.0, 99.0, 95.0, 95.0),  # Day 5: Fall to 95 (same level) - NO BREAKDOWN YET
 
-        # Follow-through
-        (92.0, 92.0, 89.0, 89.0),  # Day 6: Continued weakness
-        (89.0, 89.0, 86.0, 86.0),  # Day 7: Extended move
+        # Column 6: X column rising to 99 (start of follow-through setup)
+        (95.0, 99.0, 95.0, 99.0),  # Day 6: Rally to 99
+
+        # Column 7: O column BREAKS BELOW to 92- (FOLLOW-THROUGH BREAKDOWN!)
+        (99.0, 99.0, 92.0, 92.0),  # Day 7: BREAKDOWN below 95 to 92
+
+        # Additional follow-through
+        (92.0, 92.0, 89.0, 89.0),  # Day 8: Continued weakness
+        (89.0, 89.0, 86.0, 86.0),  # Day 9: Extended move
     ]
 
     base_date = datetime.datetime.now() - datetime.timedelta(days=len(prices))
@@ -438,32 +463,51 @@ def generate_turtle_breakout_ft_buy_pattern() -> List[Dict[str, Any]]:
     """
     Generate Turtle Breakout Follow Through (FT) Buy pattern.
 
-    Pattern structure:
-    1. Initial turtle breakout: X breaks above 5-column high
-    2. Follow through: Followed by double top buy pattern
-    3. Final breakout: X breaks above double top resistance
+    Pattern structure (from reference image):
+    1. Consolidation: 5 consecutive columns with highs at or below resistance (base building)
+    2. Initial turtle breakout: X breaks above the consolidation resistance
+    3. Follow through: Double top buy pattern after turtle breakout
+    4. Final breakout: X breaks above double top resistance
+
+    With 1% box size and 3-box reversal (3% move needed to reverse).
     """
     prices = [
-        # Days 1-5: Create 5-column range (establish the range)
-        (100.0, 102.0, 100.0, 102.0),  # Day 1: X column to 102
-        (102.0, 102.0, 99.0, 99.0),    # Day 2: O column to 99
-        (99.0, 101.0, 99.0, 101.0),    # Day 3: X column to 101
-        (101.0, 101.0, 98.0, 98.0),    # Day 4: O column to 98
-        (98.0, 100.0, 98.0, 100.0),    # Day 5: X column to 100
+        # Columns 1-5: Consolidation at 100-104 level (5 consecutive columns with highs at ~104)
+        # Column 1: X from 100 to 104 (4 boxes up) - consolidation column 1, high at 104
+        (100.0, 104.0, 100.0, 104.0),
 
-        # Day 6: INITIAL TURTLE BREAKOUT - X breaks above 5-column high (102)
-        (100.0, 104.0, 100.0, 104.0),  # Day 6: Turtle breakout above 102 to 104
+        # Column 2: O from 101 to 98 (3 boxes down) - consolidation column 2
+        (101.0, 101.0, 98.0, 98.0),
 
-        # Day 7: O column pullback
-        (104.0, 104.0, 101.0, 101.0),  # Day 7: O column pullback to 101
+        # Column 3: X from 101 to 104 (3 boxes up) - consolidation column 3, high at 104
+        (101.0, 104.0, 101.0, 104.0),
 
-        # Days 8-10: DOUBLE TOP FORMATION (follow-through pattern)
-        (101.0, 103.0, 101.0, 103.0),  # Day 8: X column to 103 (first top)
-        (103.0, 103.0, 100.0, 100.0),  # Day 9: O column to 100
-        (100.0, 103.0, 100.0, 103.0),  # Day 10: X column to 103 (second top - double top)
+        # Column 4: O from 101 to 98 (3 boxes down) - consolidation column 4
+        (101.0, 101.0, 98.0, 98.0),
 
-        # Day 11: TURTLE FT BREAKOUT - X breaks above double top resistance (103)
-        (103.0, 106.0, 103.0, 106.0),  # Day 11: TURTLE FT BREAKOUT above 103 to 106
+        # Column 5: X from 101 to 103 (2 boxes up) - consolidation column 5, high at 103 (below 104)
+        (101.0, 103.0, 101.0, 103.0),
+
+        # Column 6: TURTLE BREAKOUT - X from 107 to 115 (breaks above consolidation resistance of 104)
+        (107.0, 115.0, 107.0, 115.0),
+
+        # Column 7: O pullback from 112 to 109 (3 boxes down)
+        (112.0, 112.0, 109.0, 109.0),
+
+        # Column 8: X to 114 (5 boxes up) - First top
+        (112.0, 114.0, 112.0, 114.0),
+
+        # Column 9: O pullback from 111 to 108 (3 boxes down)
+        (111.0, 111.0, 108.0, 108.0),
+
+        # Column 10: X to 114 (6 boxes up) - Second top (double top at 114)
+        (111.0, 114.0, 111.0, 114.0),
+
+        # Column 11: O pullback from 111 to 109 (2 boxes down)
+        (111.0, 111.0, 109.0, 109.0),
+
+        # Column 12: TURTLE FT BREAKOUT - X from 112 to 118 (breaks above double top at 114)
+        (112.0, 118.0, 112.0, 118.0),
     ]
 
     # Convert to candle format
@@ -486,32 +530,51 @@ def generate_turtle_breakout_ft_sell_pattern() -> List[Dict[str, Any]]:
     """
     Generate Turtle Breakout Follow Through (FT) Sell pattern.
 
-    Pattern structure:
-    1. Initial turtle breakout: O breaks below 5-column low
-    2. Follow through: Followed by double bottom sell pattern
-    3. Final breakdown: O breaks below double bottom support
+    Pattern structure (from reference image):
+    1. Consolidation: 5 consecutive columns with lows at or above support (base building)
+    2. Initial turtle breakout: O breaks below the consolidation support
+    3. Follow through: Double bottom sell pattern after turtle breakout
+    4. Final breakdown: O breaks below double bottom support
+
+    With 1% box size and 3-box reversal (3% move needed to reverse).
     """
     prices = [
-        # Days 1-5: Create 5-column range (establish the range)
-        (100.0, 100.0, 98.0, 98.0),    # Day 1: O column to 98
-        (98.0, 101.0, 98.0, 101.0),    # Day 2: X column to 101
-        (101.0, 101.0, 99.0, 99.0),    # Day 3: O column to 99
-        (99.0, 102.0, 99.0, 102.0),    # Day 4: X column to 102
-        (102.0, 102.0, 100.0, 100.0),  # Day 5: O column to 100
+        # Columns 1-5: Consolidation at 96-100 level (5 consecutive columns with lows at ~96)
+        # Column 1: O from 100 to 96 (4 boxes down) - consolidation column 1, low at 96
+        (100.0, 100.0, 96.0, 96.0),
 
-        # Day 6: INITIAL TURTLE BREAKOUT - O breaks below 5-column low (98)
-        (100.0, 100.0, 96.0, 96.0),    # Day 6: Turtle breakout below 98 to 96
+        # Column 2: X from 99 to 102 (3 boxes up) - consolidation column 2
+        (99.0, 102.0, 99.0, 102.0),
 
-        # Day 7: X column bounce
-        (96.0, 99.0, 96.0, 99.0),      # Day 7: X column bounce to 99
+        # Column 3: O from 99 to 96 (3 boxes down) - consolidation column 3, low at 96
+        (99.0, 99.0, 96.0, 96.0),
 
-        # Days 8-10: DOUBLE BOTTOM FORMATION (follow-through pattern)
-        (99.0, 99.0, 97.0, 97.0),      # Day 8: O column to 97 (first bottom)
-        (97.0, 100.0, 97.0, 100.0),    # Day 9: X column to 100
-        (100.0, 100.0, 97.0, 97.0),    # Day 10: O column to 97 (second bottom - double bottom)
+        # Column 4: X from 99 to 102 (3 boxes up) - consolidation column 4
+        (99.0, 102.0, 99.0, 102.0),
 
-        # Day 11: TURTLE FT BREAKDOWN - O breaks below double bottom support (97)
-        (97.0, 97.0, 94.0, 94.0),      # Day 11: TURTLE FT BREAKDOWN below 97 to 94
+        # Column 5: O from 99 to 97 (2 boxes down) - consolidation column 5, low at 97 (above 96)
+        (99.0, 99.0, 97.0, 97.0),
+
+        # Column 6: TURTLE BREAKOUT - O from 93 to 85 (breaks below consolidation support of 96)
+        (93.0, 93.0, 85.0, 85.0),
+
+        # Column 7: X bounce from 88 to 91 (3 boxes up)
+        (88.0, 91.0, 88.0, 91.0),
+
+        # Column 8: O to 86 (5 boxes down) - First bottom
+        (88.0, 88.0, 86.0, 86.0),
+
+        # Column 9: X bounce from 89 to 92 (3 boxes up)
+        (89.0, 92.0, 89.0, 92.0),
+
+        # Column 10: O to 86 (6 boxes down) - Second bottom (double bottom at 86)
+        (89.0, 89.0, 86.0, 86.0),
+
+        # Column 11: X bounce from 88 to 90 (2 boxes up)
+        (88.0, 90.0, 88.0, 90.0),
+
+        # Column 12: TURTLE FT BREAKDOWN - O from 87 to 81 (breaks below double bottom at 86)
+        (87.0, 87.0, 81.0, 81.0),
     ]
 
     # Convert to candle format
@@ -588,54 +651,64 @@ def generate_ema_validated_triple_top_pattern() -> List[Dict[str, Any]]:
 
 def generate_catapult_buy_pattern() -> List[Dict[str, Any]]:
     """
-    Generate dummy data for catapult buy pattern based on P&F definition.
+    Generate dummy data for CATAPULT BUY pattern based on traditional P&F definition.
 
-    Catapult Buy = Triple Top Buy followed by Double Top Buy
+    Catapult Buy = Triple Top Buy + Double Top Buy
 
     Pattern structure:
-    1. Triple Top Buy (TTB): X-O-X-O-X where cols 1&3 equal, col 5 breaks above
-    2. Double Top Buy (DTB): After TTB ends, next X-O-X where final X breaks above
+    1. Triple Top Buy (TTB): X-O-X-O-X where X1 & X3 equal, X5 breaks above
+    2. Double Top Buy (DTB): X-O-X where X7 breaks above X5
+    3. CATAPULT BUY: Alert triggers at column 7 (X7)
 
-    With 0.25% box size and 3-box reversal (0.75% move needed to reverse).
-    Using gradual multi-day moves to build each column separately.
+    Total pattern: X-O-X-O-X-O-X (7 columns)
+
+    With 1% box size and 3-box reversal (3% move needed to reverse).
+    Using multi-day gradual moves to create clean P&F columns.
     """
     candles = []
 
     # Catapult Buy Pattern: X-O-X-O-X-O-X (7 columns)
+    # Each column needs gradual moves to ensure proper P&F column formation
     prices = [
-        # Column 1: X rises to 105 (first top)
-        (100.0, 102.0, 100.0, 102.0),  # Day 1
-        (102.0, 104.0, 102.0, 104.0),  # Day 2
-        (104.0, 105.0, 104.0, 105.0),  # Day 3: First top at 105
+        # Column 1: X rises from 100 to 110 (first top) - gradual rise
+        (100.0, 103.0, 100.0, 103.0),  # Day 1
+        (103.0, 106.0, 103.0, 106.0),  # Day 2
+        (106.0, 109.0, 106.0, 109.0),  # Day 3
+        (109.0, 110.0, 109.0, 110.0),  # Day 4: First top at 110
 
-        # Column 2: O falls to 102.5 (reversal)
-        (105.0, 105.0, 103.2, 103.2),  # Day 4: Fall triggers reversal
-        (103.2, 103.2, 102.5, 102.5),  # Day 5
+        # Column 2: O falls from 110 to 100 - gradual fall (3% reversal triggers)
+        (110.0, 110.0, 106.5, 106.5),  # Day 5: Fall triggers reversal
+        (106.5, 106.5, 103.0, 103.0),  # Day 6
+        (103.0, 103.0, 100.0, 100.0),  # Day 7: Fall to 100
 
-        # Column 3: X rises to 105 again (EQUAL to column 1)
-        (102.5, 103.5, 102.5, 103.5),  # Day 6
-        (103.5, 104.5, 103.5, 104.5),  # Day 7
-        (104.5, 105.0, 104.5, 105.0),  # Day 8: Second top at 105 (EQUAL)
+        # Column 3: X rises from 100 to 110 again (EQUAL to column 1)
+        (100.0, 103.5, 100.0, 103.5),  # Day 8: Rise triggers reversal
+        (103.5, 107.0, 103.5, 107.0),  # Day 9
+        (107.0, 110.0, 107.0, 110.0),  # Day 10: Second top at 110 (EQUAL)
 
-        # Column 4: O falls to 102.5
-        (105.0, 105.0, 103.2, 103.2),  # Day 9
-        (103.2, 103.2, 102.5, 102.5),  # Day 10
+        # Column 4: O falls from 110 to 100
+        (110.0, 110.0, 106.5, 106.5),  # Day 11: Fall triggers reversal
+        (106.5, 106.5, 103.0, 103.0),  # Day 12
+        (103.0, 103.0, 100.0, 100.0),  # Day 13: Fall to 100
 
-        # Column 5: X BREAKS ABOVE to 107+ (TTB complete!)
-        (102.5, 103.5, 102.5, 103.5),  # Day 11
-        (103.5, 105.0, 103.5, 105.0),  # Day 12
-        (105.0, 106.5, 105.0, 106.5),  # Day 13: BREAKOUT above 105
-        (106.5, 107.5, 106.5, 107.5),  # Day 14: TTB complete at 107.5
+        # Column 5: X BREAKS ABOVE to 115 (TTB complete!)
+        (100.0, 103.5, 100.0, 103.5),  # Day 14: Rise triggers reversal
+        (103.5, 107.0, 103.5, 107.0),  # Day 15
+        (107.0, 110.5, 107.0, 110.5),  # Day 16: Pass 110
+        (110.5, 113.0, 110.5, 113.0),  # Day 17: BREAKOUT above 110
+        (113.0, 115.0, 113.0, 115.0),  # Day 18: TTB complete at 115
 
-        # Column 6: O falls to 104.5 (pullback after TTB)
-        (107.5, 107.5, 105.5, 105.5),  # Day 15
-        (105.5, 105.5, 104.5, 104.5),  # Day 16
+        # Column 6: O falls from 115 to 105 (pullback after TTB)
+        (115.0, 115.0, 111.5, 111.5),  # Day 19: Fall triggers reversal
+        (111.5, 111.5, 108.0, 108.0),  # Day 20
+        (108.0, 108.0, 105.0, 105.0),  # Day 21: Fall to 105
 
-        # Column 7: X BREAKS ABOVE 107.5 to 110+ (DTB = CATAPULT!)
-        (104.5, 105.5, 104.5, 105.5),  # Day 17
-        (105.5, 107.5, 105.5, 107.5),  # Day 18: Test previous high
-        (107.5, 109.5, 107.5, 109.5),  # Day 19: CATAPULT BREAKOUT!
-        (109.5, 111.0, 109.5, 111.0),  # Day 20: Strong follow-through
+        # Column 7: X BREAKS ABOVE 115 to 120+ (CATAPULT BUY! DTB complete!)
+        (105.0, 108.5, 105.0, 108.5),  # Day 22: Rise triggers reversal
+        (108.5, 112.0, 108.5, 112.0),  # Day 23
+        (112.0, 115.5, 112.0, 115.5),  # Day 24: Pass 115
+        (115.5, 118.0, 115.5, 118.0),  # Day 25: CATAPULT BUY! Breaks above 115
+        (118.0, 120.0, 118.0, 120.0),  # Day 26: DTB complete at 120
     ]
 
     base_date = datetime.datetime.now() - datetime.timedelta(days=len(prices))
@@ -805,43 +878,237 @@ def generate_pole_follow_through_sell_pattern() -> List[Dict[str, Any]]:
 
 def generate_catapult_sell_pattern() -> List[Dict[str, Any]]:
     """
-    Generate dummy data for catapult sell pattern based on user's image.
+    Generate dummy data for CATAPULT SELL pattern based on traditional P&F definition.
 
-    CORRECT PATTERN STRUCTURE:
-    1. Triple bottom sell pattern: Columns 1,2,3 where column 3 (O) breaks BELOW columns 1,2
-    2. Double bottom sell pattern: Columns 3,4 where column 4 (O) breaks BELOW column 3
-    3. Territory entry: Final X column enters territory and breaks above resistance
+    Catapult Sell = Triple Bottom Sell + Double Bottom Sell
 
-    From image: O-X-O-X-O (triple bottom sell) then O-X-O (double bottom sell) then X breakout
+    Pattern structure:
+    1. Triple Bottom Sell (TBS): O-X-O-X-O where O1 & O3 equal, O5 breaks below
+    2. Double Bottom Sell (DBS): O-X-O where O7 breaks below O5
+    3. CATAPULT SELL: Alert triggers at column 7 (O7)
+
+    Total pattern: O-X-O-X-O-X-O (7 columns)
+
+    With 1% box size and 3-box reversal (3% move needed to reverse).
+    Using multi-day gradual moves to create clean P&F columns.
     """
     candles = []
 
-    # Create catapult sell pattern with PRECISE structure for exact P&F columns
-    # Using larger price movements to ensure clean column transitions
+    # Catapult Sell Pattern: O-X-O-X-O-X-O (7 columns)
+    # Each column needs gradual moves to ensure proper P&F column formation
     prices = [
-        # COLUMN 1: O column (first bottom at 101) - Start from 115, fall to 101
-        (115.0, 115.0, 101.0, 101.0),  # Day 1 - Strong decline to first bottom at 101
+        # Column 1: O falls from 110 to 100 (first bottom) - gradual decline
+        (110.0, 110.0, 107.0, 107.0),  # Day 1
+        (107.0, 107.0, 104.0, 104.0),  # Day 2
+        (104.0, 104.0, 101.0, 101.0),  # Day 3
+        (101.0, 101.0, 100.0, 100.0),  # Day 4: First bottom at 100
 
-        # COLUMN 2: X column (rise to 115) - Rise from 101 to 115
-        (101.0, 115.0, 101.0, 115.0),  # Day 2 - Strong rise to 115
+        # Column 2: X rises from 100 to 110 - gradual rise (3% reversal triggers)
+        (100.0, 103.5, 100.0, 103.5),  # Day 5: Rise triggers reversal
+        (103.5, 107.0, 103.5, 107.0),  # Day 6
+        (107.0, 110.0, 107.0, 110.0),  # Day 7: Rise to 110
 
-        # COLUMN 3: O column (second bottom at 101) - Fall from 115 to 101
-        (115.0, 115.0, 101.0, 101.0),  # Day 3 - Decline to second bottom at 101 (same level)
+        # Column 3: O falls from 110 to 100 again (EQUAL to column 1)
+        (110.0, 110.0, 106.5, 106.5),  # Day 8: Fall triggers reversal
+        (106.5, 106.5, 103.0, 103.0),  # Day 9
+        (103.0, 103.0, 100.0, 100.0),  # Day 10: Second bottom at 100 (EQUAL)
 
-        # COLUMN 4: X column (rise to 115) - Rise from 101 to 115
-        (101.0, 115.0, 101.0, 115.0),  # Day 4 - Rise to 115
+        # Column 4: X rises from 100 to 110
+        (100.0, 103.5, 100.0, 103.5),  # Day 11: Rise triggers reversal
+        (103.5, 107.0, 103.5, 107.0),  # Day 12
+        (107.0, 110.0, 107.0, 110.0),  # Day 13: Rise to 110
 
-        # COLUMN 5: O column (THIRD BOTTOM - breaks below 101) - COMPLETES TRIPLE BOTTOM SELL
-        (115.0, 115.0, 97.0, 97.0),    # Day 5 - BREAK BELOW 101 to 97 (triple bottom sell complete)
+        # Column 5: O BREAKS BELOW to 95 (TBS complete!)
+        (110.0, 110.0, 106.5, 106.5),  # Day 14: Fall triggers reversal
+        (106.5, 106.5, 103.0, 103.0),  # Day 15
+        (103.0, 103.0, 99.5, 99.5),    # Day 16: Pass 100
+        (99.5, 99.5, 97.0, 97.0),      # Day 17: BREAKDOWN below 100
+        (97.0, 97.0, 95.0, 95.0),      # Day 18: TBS complete at 95
 
-        # COLUMN 6: X column (rise to 115) - Rise from 97 to 115
-        (97.0, 115.0, 97.0, 115.0),    # Day 6 - Rise to 115
+        # Column 6: X rises from 95 to 105 (pullback after TBS)
+        (95.0, 98.5, 95.0, 98.5),      # Day 19: Rise triggers reversal
+        (98.5, 102.0, 98.5, 102.0),    # Day 20
+        (102.0, 105.0, 102.0, 105.0),  # Day 21: Rise to 105
 
-        # COLUMN 7: O column (FOURTH BOTTOM - breaks below 97) - COMPLETES DOUBLE BOTTOM SELL
-        (115.0, 115.0, 93.0, 93.0),    # Day 7 - BREAK BELOW 97 to 93 (double bottom sell complete)
+        # Column 7: O BREAKS BELOW 95 to 90- (CATAPULT SELL! DBS complete!)
+        (105.0, 105.0, 101.5, 101.5),  # Day 22: Fall triggers reversal
+        (101.5, 101.5, 98.0, 98.0),    # Day 23
+        (98.0, 98.0, 94.5, 94.5),      # Day 24: Pass 95
+        (94.5, 94.5, 92.0, 92.0),      # Day 25: CATAPULT SELL! Breaks below 95
+        (92.0, 92.0, 90.0, 90.0),      # Day 26: DBS complete at 90
+    ]
 
-        # COLUMN 8: CATAPULT BREAKOUT - X column enters territory and breaks above 115
-        (93.0, 119.0, 93.0, 119.0),    # Day 8 - CATAPULT SELL: Break above 115 resistance (catapult effect)
+    base_date = datetime.datetime.now() - datetime.timedelta(days=len(prices))
+
+    for i, (open_price, high, low, close) in enumerate(prices):
+        candle_date = base_date + datetime.timedelta(days=i)
+        candles.append({
+            'timestamp': candle_date,
+            'open': open_price,
+            'high': high,
+            'low': low,
+            'close': close,
+            'volume': 100000 + (i * 1000)
+        })
+
+    return candles
+
+def generate_ziddi_bulls_pattern() -> List[Dict[str, Any]]:
+    """
+    Generate dummy data for ZIDDI BULLS pattern (Stubborn Bulls).
+
+    Pattern indicates bulls are stubborn and not willing to let prices fall.
+
+    Pattern structure (10 columns): O-X-O-X-O-X-O-X-O-X
+    1. Double Bottom Sell #1: O1 & O3 equal at 100, O5 breaks below to 98
+    2. Double Bottom Sell #2: O7 breaks below O5 to 97 (but only small decline!)
+    3. Double Top Buy: X10 breaks above X8 - Bulls take control
+
+    With 1% box size and 3-box reversal (3% move needed to reverse).
+    """
+    candles = []
+
+    prices = [
+        # Start with a small rise to establish base, then fall for Column 1 (O)
+        (100.0, 100.5, 100.0, 100.5),  # Day 0: Establish base
+
+        # Column 1 (O): Falls from 110 to 100 (first bottom O1)
+        (110.0, 110.0, 107.0, 107.0),  # Day 1
+        (107.0, 107.0, 104.0, 104.0),  # Day 2
+        (104.0, 104.0, 101.0, 101.0),  # Day 3
+        (101.0, 101.0, 100.0, 100.0),  # Day 4: O1 bottom at 100
+
+        # Column 2 (X): Rises from 100 to 110 (X2)
+        (100.0, 103.5, 100.0, 103.5),  # Day 5: Rise triggers reversal
+        (103.5, 107.0, 103.5, 107.0),  # Day 6
+        (107.0, 110.0, 107.0, 110.0),  # Day 7: X2 top at 110
+
+        # Column 3 (O): Falls from 110 to 100 again (O3 EQUAL to O1)
+        (110.0, 110.0, 106.5, 106.5),  # Day 8: Fall triggers reversal
+        (106.5, 106.5, 103.0, 103.0),  # Day 9
+        (103.0, 103.0, 100.0, 100.0),  # Day 10: O3 bottom at 100 (EQUAL to O1)
+
+        # Column 4 (X): Rises from 100 to 110 (X4)
+        (100.0, 103.5, 100.0, 103.5),  # Day 11: Rise triggers reversal
+        (103.5, 107.0, 103.5, 107.0),  # Day 12
+        (107.0, 110.0, 107.0, 110.0),  # Day 13: X4 top at 110
+
+        # Column 5 (O): BREAKS BELOW to 98 (O5 - DBS #1 complete)
+        (110.0, 110.0, 106.5, 106.5),  # Day 14: Fall triggers reversal
+        (106.5, 106.5, 103.0, 103.0),  # Day 15
+        (103.0, 103.0, 99.5, 99.5),    # Day 16
+        (99.5, 99.5, 98.0, 98.0),      # Day 17: O5 at 98 (breaks below O1/O3)
+
+        # Column 6 (X): Rises from 98 to 108 (X6)
+        (98.0, 101.5, 98.0, 101.5),    # Day 18: Rise triggers reversal
+        (101.5, 105.0, 101.5, 105.0),  # Day 19
+        (105.0, 108.0, 105.0, 108.0),  # Day 20: X6 top at 108
+
+        # Column 7 (O): Falls to 97 (O7 - DBS #2, only 1 point below O5!)
+        (108.0, 108.0, 104.5, 104.5),  # Day 21: Fall triggers reversal
+        (104.5, 104.5, 101.0, 101.0),  # Day 22
+        (101.0, 101.0, 98.5, 98.5),    # Day 23
+        (98.5, 98.5, 97.0, 97.0),      # Day 24: O7 at 97 (stubborn bulls!)
+
+        # Column 8 (X): Rises from 97 to 107 (X8)
+        (97.0, 100.5, 97.0, 100.5),    # Day 25: Rise triggers reversal
+        (100.5, 104.0, 100.5, 104.0),  # Day 26
+        (104.0, 107.0, 104.0, 107.0),  # Day 27: X8 top at 107
+
+        # Column 9 (O): Falls to 102 (O9 - bear trap)
+        (107.0, 107.0, 103.5, 103.5),  # Day 28: Fall triggers reversal
+        (103.5, 103.5, 102.0, 102.0),  # Day 29: O9 at 102
+
+        # Column 10 (X): BREAKS ABOVE to 112+ (X10 - ZIDDI BULLS!)
+        (102.0, 105.5, 102.0, 105.5),  # Day 30: Rise triggers reversal
+        (105.5, 109.0, 105.5, 109.0),  # Day 31: Pass X8 high
+        (109.0, 112.0, 109.0, 112.0),  # Day 32: ZIDDI BULLS! X10 breaks above
+        (112.0, 115.0, 112.0, 115.0),  # Day 33: Strong follow-through
+    ]
+
+    base_date = datetime.datetime.now() - datetime.timedelta(days=len(prices))
+
+    for i, (open_price, high, low, close) in enumerate(prices):
+        candle_date = base_date + datetime.timedelta(days=i)
+        candles.append({
+            'timestamp': candle_date,
+            'open': open_price,
+            'high': high,
+            'low': low,
+            'close': close,
+            'volume': 100000 + (i * 1000)
+        })
+
+    return candles
+
+def generate_ziddi_bears_pattern() -> List[Dict[str, Any]]:
+    """
+    Generate dummy data for ZIDDI BEARS pattern (Stubborn Bears).
+
+    Pattern indicates bears are stubborn and not willing to let prices rise.
+
+    Pattern structure (10 columns): X-O-X-O-X-O-X-O-X-O
+    1. Double Top Buy #1: X1 & X3 equal at 110, X5 breaks above to 112
+    2. Double Top Buy #2: X7 breaks above X5 to 113 (but only small rise!)
+    3. Double Bottom Sell: O10 breaks below O8 - Bears take control
+
+    With 1% box size and 3-box reversal (3% move needed to reverse).
+    """
+    candles = []
+
+    prices = [
+        # Column 1 (X): Rises from 100 to 110 (first top X1)
+        (100.0, 103.0, 100.0, 103.0),  # Day 1
+        (103.0, 106.0, 103.0, 106.0),  # Day 2
+        (106.0, 109.0, 106.0, 109.0),  # Day 3
+        (109.0, 110.0, 109.0, 110.0),  # Day 4: X1 top at 110
+
+        # Column 2 (O): Falls from 110 to 100 (O2)
+        (110.0, 110.0, 106.5, 106.5),  # Day 5: Fall triggers reversal
+        (106.5, 106.5, 103.0, 103.0),  # Day 6
+        (103.0, 103.0, 100.0, 100.0),  # Day 7: O2 bottom at 100
+
+        # Column 3 (X): Rises from 100 to 110 again (X3 EQUAL to X1)
+        (100.0, 103.5, 100.0, 103.5),  # Day 8: Rise triggers reversal
+        (103.5, 107.0, 103.5, 107.0),  # Day 9
+        (107.0, 110.0, 107.0, 110.0),  # Day 10: X3 top at 110 (EQUAL to X1)
+
+        # Column 4 (O): Falls from 110 to 100 (O4)
+        (110.0, 110.0, 106.5, 106.5),  # Day 11: Fall triggers reversal
+        (106.5, 106.5, 103.0, 103.0),  # Day 12
+        (103.0, 103.0, 100.0, 100.0),  # Day 13: O4 bottom at 100
+
+        # Column 5 (X): BREAKS ABOVE to 112 (X5 - DTB #1 complete)
+        (100.0, 103.5, 100.0, 103.5),  # Day 14: Rise triggers reversal
+        (103.5, 107.0, 103.5, 107.0),  # Day 15
+        (107.0, 110.5, 107.0, 110.5),  # Day 16
+        (110.5, 112.0, 110.5, 112.0),  # Day 17: X5 at 112 (breaks above X1/X3)
+
+        # Column 6 (O): Falls from 112 to 102 (O6)
+        (112.0, 112.0, 108.5, 108.5),  # Day 18: Fall triggers reversal
+        (108.5, 108.5, 105.0, 105.0),  # Day 19
+        (105.0, 105.0, 102.0, 102.0),  # Day 20: O6 bottom at 102
+
+        # Column 7 (X): Rises to 113 (X7 - DTB #2, only 1 point above X5!)
+        (102.0, 105.5, 102.0, 105.5),  # Day 21: Rise triggers reversal
+        (105.5, 109.0, 105.5, 109.0),  # Day 22
+        (109.0, 112.5, 109.0, 112.5),  # Day 23
+        (112.5, 113.0, 112.5, 113.0),  # Day 24: X7 at 113 (stubborn bears!)
+
+        # Column 8 (O): Falls from 113 to 103 (O8)
+        (113.0, 113.0, 109.5, 109.5),  # Day 25: Fall triggers reversal
+        (109.5, 109.5, 106.0, 106.0),  # Day 26
+        (106.0, 106.0, 103.0, 103.0),  # Day 27: O8 bottom at 103
+
+        # Column 9 (X): Rises to 108 (X9 - bull trap)
+        (103.0, 106.5, 103.0, 106.5),  # Day 28: Rise triggers reversal
+        (106.5, 108.0, 106.5, 108.0),  # Day 29: X9 top at 108
+
+        # Column 10 (O): BREAKS BELOW to 98- (O10 - ZIDDI BEARS!)
+        (108.0, 108.0, 104.5, 104.5),  # Day 30: Fall triggers reversal
+        (104.5, 104.5, 101.0, 101.0),  # Day 31: Pass O8 low
+        (101.0, 101.0, 98.0, 98.0),    # Day 32: ZIDDI BEARS! O10 breaks below
+        (98.0, 98.0, 95.0, 95.0),      # Day 33: Strong follow-through
     ]
 
     base_date = datetime.datetime.now() - datetime.timedelta(days=len(prices))
@@ -932,35 +1199,53 @@ def generate_aft_anchor_breakdown_sell_pattern():
     Generate AFT (Anchor Column Follow Through) Bearish Breakdown pattern.
 
     Pattern structure:
-    1. Tall O anchor column (14+ O symbols) - strong bearish momentum
-    2. Consolidation within 8 columns (price stays within anchor range)
-    3. O column breaks below anchor low within 8 columns
+    1. Tall O anchor column (25+ O symbols) - strong bearish momentum
+    2. Consolidation: Price stays above anchor low for several columns
+    3. Breakdown: On the 4th column after anchor, O column:
+       - Performs Double Bottom Breakdown (breaks below previous O column)
+       - AND breaks below anchor low
+
+    With 0.25% box size and 3-box reversal (0.75% move needed to reverse).
+    Using gradual multi-day moves to build each column separately.
     """
-    # Create AFT anchor breakdown sell pattern
+    candles = []
+
+    # AFT Anchor Breakdown Sell Pattern: O-X-O-X-O (5 columns)
     prices = [
-        # Day 1: Create single tall O anchor column (114 down to 100 in one day) - 14+ O symbols
-        (114.0, 114.0, 100.0, 100.0),  # Day 1: Tall O anchor column from 114 to 100
+        # Column 1: ANCHOR - Tall O column from 125 to 100 (25-point anchor, ~100 boxes)
+        (125.0, 125.0, 123.0, 123.0),  # Day 1
+        (123.0, 123.0, 121.0, 121.0),  # Day 2
+        (121.0, 121.0, 119.0, 119.0),  # Day 3
+        (119.0, 119.0, 117.0, 117.0),  # Day 4
+        (117.0, 117.0, 115.0, 115.0),  # Day 5
+        (115.0, 115.0, 113.0, 113.0),  # Day 6
+        (113.0, 113.0, 111.0, 111.0),  # Day 7
+        (111.0, 111.0, 109.0, 109.0),  # Day 8
+        (109.0, 109.0, 107.0, 107.0),  # Day 9
+        (107.0, 107.0, 105.0, 105.0),  # Day 10
+        (105.0, 105.0, 103.0, 103.0),  # Day 11
+        (103.0, 103.0, 101.0, 101.0),  # Day 12
+        (101.0, 101.0, 100.0, 100.0),  # Day 13: Anchor low at 100
 
-        # Day 2: X column rise (start consolidation)
-        (100.0, 109.0, 100.0, 109.0),  # Day 2: Rise to 109 (within anchor range)
+        # Column 2: X recovery to 103
+        (100.0, 103.0, 100.0, 103.0),  # Day 14: Rise triggers reversal
 
-        # Day 3-8: Consolidation within anchor range (100-114) for 6 columns
-        (109.0, 109.0, 104.0, 104.0),  # Day 3: O column to 104 (above anchor low)
-        (104.0, 108.0, 104.0, 108.0),  # Day 4: X column to 108
-        (108.0, 108.0, 102.0, 102.0),  # Day 5: O column to 102 (above anchor low)
-        (102.0, 107.0, 102.0, 107.0),  # Day 6: X column to 107
-        (107.0, 107.0, 103.0, 103.0),  # Day 7: O column to 103 (consolidation)
-        (103.0, 108.0, 103.0, 108.0),  # Day 8: X column to 108
+        # Column 3: O pullback to 101 (above anchor low)
+        (103.0, 103.0, 101.0, 101.0),  # Day 15: First O column in consolidation
 
-        # Day 9: AFT BREAKDOWN - O column breaks below anchor low (100)
-        (108.0, 108.0, 98.0, 98.0),   # Day 9: AFT BREAKDOWN below 100 to 98
+        # Column 4: X rise to 104
+        (101.0, 104.0, 101.0, 104.0),  # Day 16: X column
+
+        # Column 5: AFT BREAKDOWN - O column breaks below previous O (101) AND anchor low (100)
+        (104.0, 104.0, 99.0, 99.0),   # Day 17: Double Bottom Breakdown + AFT
     ]
 
-    # Convert to candle format
-    candles = []
+    base_date = datetime.datetime.now() - datetime.timedelta(days=len(prices))
+
     for i, (open_price, high, low, close) in enumerate(prices):
+        candle_date = base_date + datetime.timedelta(days=i)
         candles.append({
-            'timestamp': f'2024-01-{i+1:02d}T09:30:00Z',
+            'timestamp': candle_date,
             'open': open_price,
             'high': high,
             'low': low,
@@ -1522,7 +1807,7 @@ TEST_PATTERNS = {
     },
     'aft_anchor_breakdown_sell': {
         'name': 'AFT Anchor Breakdown Sell',
-        'description': 'Anchor Column Follow Through - tall O anchor column followed by consolidation within 8 columns, then breakdown below anchor low',
+        'description': 'Anchor Column Follow Through - tall O anchor column (25+ boxes) followed by consolidation, then Double Bottom Breakdown + anchor break on 4th column',
         'expected_signal': 'SELL',
         'data_generator': generate_aft_anchor_breakdown_sell_pattern
     },
@@ -1561,6 +1846,18 @@ TEST_PATTERNS = {
         'description': 'Anchor-Breakdown-Count momentum pattern with 45-degree bullish trendline breakdown after bearish anchor column',
         'expected_signal': 'SELL',
         'data_generator': generate_abc_bearish_pattern
+    },
+    'ziddi_bulls': {
+        'name': 'Ziddi Bulls (BUY)',
+        'description': 'Stubborn bulls pattern - Failed double bottom sells followed by double top buy breakout. Bulls not letting price fall!',
+        'expected_signal': 'BUY',
+        'data_generator': generate_ziddi_bulls_pattern
+    },
+    'ziddi_bears': {
+        'name': 'Ziddi Bears (SELL)',
+        'description': 'Stubborn bears pattern - Failed double top buys followed by double bottom sell breakdown. Bears not letting price rise!',
+        'expected_signal': 'SELL',
+        'data_generator': generate_ziddi_bears_pattern
     }
 }
 
@@ -1583,7 +1880,7 @@ def analyze_alert_triggers(highs: list, lows: list, box_pct: float, reversal: in
 
     # Pass closing prices for EMA calculation if available
     price_data = closes if closes else None
-    alert_triggers = detector.analyze_pattern_formation(x_coords, y_coords, pnf_symbols, price_data)
+    alert_triggers = detector.analyze_pattern_formation(x_coords, y_coords, pnf_symbols, price_data, box_pct)
 
     # Convert to the expected format
     triggers = []

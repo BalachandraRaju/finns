@@ -173,7 +173,7 @@ def check_pnf_alerts(symbol: str, instrument_key: str):
         detector = PatternDetector()
 
         # Analyze patterns with closing prices for EMA calculation
-        alert_triggers = detector.analyze_pattern_formation(x_coords, y_coords, pnf_symbols, closes)
+        alert_triggers = detector.analyze_pattern_formation(x_coords, y_coords, pnf_symbols, closes, box_percentage)
 
         # Process each alert trigger
         for alert_trigger in alert_triggers:

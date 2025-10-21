@@ -43,6 +43,10 @@ class PatternType(Enum):
     ABC_BULLISH = "abc_bullish"
     ABC_BEARISH = "abc_bearish"
 
+    # Ziddi patterns (stubborn bulls/bears - failed double patterns followed by reversal)
+    ZIDDI_BULLS = "ziddi_bulls"
+    ZIDDI_BEARS = "ziddi_bears"
+
     # Legacy patterns (for backward compatibility)
     DOUBLE_TOP_BUY = "double_top_buy"
     DOUBLE_BOTTOM_SELL = "double_bottom_sell"
@@ -60,7 +64,7 @@ class AlertType(Enum):
 
 @dataclass
 class PatternState:
-    """Tracks the state of a pattern formation."""
+    """Tracks the state of a pattern formation with two-phase detection support."""
     pattern_type: PatternType
     is_forming: bool = False
     is_confirmed: bool = False
@@ -68,6 +72,13 @@ class PatternState:
     confirmation_column: Optional[int] = None
     alert_fired: bool = False
     formation_start_column: Optional[int] = None
+
+    # Two-phase detection fields
+    base_pattern_formed: bool = False  # Phase 1: Base pattern (triple/quadruple tops) completed
+    base_pattern_level: Optional[float] = None  # The resistance/support level of base pattern
+    base_pattern_column: Optional[int] = None  # Column where base pattern completed
+    waiting_for_followthrough: bool = False  # Waiting for follow-through breakout
+    followthrough_required: bool = False  # Whether this pattern requires follow-through
 
 @dataclass
 class AlertTrigger:
@@ -93,7 +104,18 @@ class PatternDetector:
     def reset_pattern_states(self):
         """Reset all pattern states for new analysis."""
         for pattern_type in PatternType:
-            self.pattern_states[pattern_type] = PatternState(pattern_type)
+            state = PatternState(pattern_type)
+
+            # Set follow-through requirements for multiple top/bottom patterns
+            if pattern_type in [
+                PatternType.TRIPLE_TOP_BUY, PatternType.QUADRUPLE_TOP_BUY,
+                PatternType.TRIPLE_BOTTOM_SELL, PatternType.QUADRUPLE_BOTTOM_SELL,
+                PatternType.TRIPLE_TOP_BUY_EMA, PatternType.QUADRUPLE_TOP_BUY_EMA,
+                PatternType.TRIPLE_BOTTOM_SELL_EMA, PatternType.QUADRUPLE_BOTTOM_SELL_EMA
+            ]:
+                state.followthrough_required = True
+
+            self.pattern_states[pattern_type] = state
 
     def _calculate_fibonacci_levels(self, highs: List[float], lows: List[float]) -> Optional[Dict]:
         """
@@ -280,7 +302,7 @@ class PatternDetector:
         return alert
 
     def analyze_pattern_formation(self, x_coords: List[int], y_coords: List[float],
-                                pnf_symbols: List[str], price_data: List[float] = None) -> List[AlertTrigger]:
+                                pnf_symbols: List[str], price_data: List[float] = None, box_percentage: float = 0.0025) -> List[AlertTrigger]:
         """
         Analyze P&F data for LIVE trading alerts with EMA validation.
         CRITICAL: Alerts fire ONLY on the LATEST/CURRENT column for real-time trading.
@@ -292,11 +314,13 @@ class PatternDetector:
             y_coords: Price levels
             pnf_symbols: X or O symbols
             price_data: Historical closing prices for EMA calculation (optional)
+            box_percentage: Box size as percentage (default: 0.0025 = 0.25%)
 
         Returns:
             List of alert triggers (only on latest column)
         """
         self.reset_pattern_states()
+        self.box_percentage = box_percentage  # Store for use in pattern checks
         alerts = []
 
         if len(x_coords) == 0:
@@ -339,28 +363,30 @@ class PatternDetector:
             all_alerts.extend(point_alerts)
 
         # Prioritize specific patterns over generic patterns
-        # Priority order: Catapult > Triple/Quadruple Top > AFT > Pole FT > Double Top > ABC/Tweezer
+        # Priority order: Ziddi > Catapult > Triple/Quadruple Top > AFT > Pole FT > Double Top > ABC/Tweezer
         pattern_priority = {
-            'catapult_buy': 1,
-            'catapult_sell': 1,
-            'quadruple_top_buy': 2,
-            'quadruple_bottom_sell': 2,
-            'triple_top_buy': 3,
-            'triple_bottom_sell': 3,
-            'aft_anchor_breakout_buy': 4,
-            'aft_anchor_breakdown_sell': 4,
-            'pole_follow_through_buy': 5,
-            'pole_follow_through_sell': 5,
-            'double_top_buy': 6,
-            'double_bottom_sell': 6,
-            'low_pole_ft_buy': 7,
-            'high_pole_ft_sell': 7,
-            'turtle_breakout_ft_buy': 8,
-            'turtle_breakout_ft_sell': 8,
-            'abc_bullish': 9,
-            'abc_bearish': 9,
-            'tweezer_bullish': 10,
-            'tweezer_bearish': 10,
+            'ziddi_bulls': 1,
+            'ziddi_bears': 1,
+            'catapult_buy': 2,
+            'catapult_sell': 2,
+            'quadruple_top_buy': 3,
+            'quadruple_bottom_sell': 3,
+            'triple_top_buy': 4,
+            'triple_bottom_sell': 4,
+            'aft_anchor_breakout_buy': 5,
+            'aft_anchor_breakdown_sell': 5,
+            'pole_follow_through_buy': 6,
+            'pole_follow_through_sell': 6,
+            'double_top_buy': 7,
+            'double_bottom_sell': 7,
+            'low_pole_ft_buy': 8,
+            'high_pole_ft_sell': 8,
+            'turtle_breakout_ft_buy': 9,
+            'turtle_breakout_ft_sell': 9,
+            'abc_bullish': 10,
+            'abc_bearish': 10,
+            'tweezer_bullish': 11,
+            'tweezer_bearish': 11,
         }
 
         # Sort alerts by priority (lower number = higher priority)
@@ -491,6 +517,9 @@ class PatternDetector:
             # Check ABC bullish pattern (Anchor-Breakout-Count momentum pattern)
             self._check_abc_bullish(data, column, price, current_index, alerts, latest_column, ema_20)
 
+            # Check ziddi bulls pattern (stubborn bulls - failed double bottoms followed by breakout)
+            self._check_ziddi_bulls(data, column, price, current_index, alerts, latest_column, ema_20)
+
         # For bearish patterns (O breaking below multiple previous attempts)
         elif symbol == 'O':
             # Check traditional patterns
@@ -520,6 +549,9 @@ class PatternDetector:
 
             # Check high pole follow through sell pattern (4-column high pole + double bottom confirmation)
             self._check_high_pole_ft_sell(data, column, price, current_index, alerts, latest_column, ema_20)
+
+            # Check ziddi bears pattern (stubborn bears - failed double tops followed by breakdown)
+            self._check_ziddi_bears(data, column, price, current_index, alerts, latest_column, ema_20)
 
     def _check_multiple_top_breakout(self, data: Dict, column: int, price: float,
                                    current_index: int, alerts: List[AlertTrigger], latest_column: int):
@@ -552,61 +584,59 @@ class PatternDetector:
         if columns[latest_column]['symbol'] != 'X':
             return
 
-        # Check for Triple Top Buy: X-O-X-O-X (5 columns minimum)
-        # Note: May have initial O column, so check both 5 and 6 column patterns
-        for num_cols in [5, 6]:
-            if len(col_nums) < num_cols:
-                continue
-
-            last_n = col_nums[-num_cols:]
-            pattern = [columns[c]['symbol'] for c in last_n]
-
-            # Look for X-O-X-O-X pattern
-            if num_cols == 6 and pattern == ['O', 'X', 'O', 'X', 'O', 'X']:
-                # Pattern starts at index 1
-                x_indices = [1, 3, 5]
-            elif num_cols == 5 and pattern == ['X', 'O', 'X', 'O', 'X']:
-                # Pattern starts at index 0
-                x_indices = [0, 2, 4]
-            else:
-                continue
-
-            # Get tops of X columns
-            x1_top = max(columns[last_n[x_indices[0]]]['prices'])
-            x3_top = max(columns[last_n[x_indices[1]]]['prices'])
-            x5_top = max(columns[last_n[x_indices[2]]]['prices'])
-
-            # Check if X1 and X3 are EQUAL (within 0.5% tolerance)
-            tolerance = x1_top * 0.005
-            if abs(x1_top - x3_top) <= tolerance and x5_top > x1_top:
-                pattern_state = self.pattern_states[PatternType.TRIPLE_TOP_BUY]
-                if not pattern_state.alert_fired:
-                    alerts.append(AlertTrigger(
-                        column=column,
-                        price=price,
-                        alert_type=AlertType.BUY,
-                        pattern_type=PatternType.TRIPLE_TOP_BUY,
-                        trigger_reason=f"🚨 TRIPLE TOP BUY: Price {price:.2f} breaks above resistance {x1_top:.2f} after 2 equal tops at {x1_top:.2f}",
-                        is_first_occurrence=True
-                    ))
-                    pattern_state.alert_fired = True
-                    return  # Found triple top, don't check for double top
-
-        # Check for Quadruple Top Buy: X-O-X-O-X-O-X (7 columns minimum)
+        # Check for Triple Top Buy with Follow Through: X-O-X-O-X-O-X (7 columns)
+        # This is a complete pattern where X1, X3, X5 are EQUAL and X7 breaks ABOVE
         if len(col_nums) >= 7:
             last_7 = col_nums[-7:]
             pattern = [columns[c]['symbol'] for c in last_7]
 
             if pattern == ['X', 'O', 'X', 'O', 'X', 'O', 'X']:
+                # Get tops of all X columns
                 x1_top = max(columns[last_7[0]]['prices'])
                 x3_top = max(columns[last_7[2]]['prices'])
                 x5_top = max(columns[last_7[4]]['prices'])
                 x7_top = max(columns[last_7[6]]['prices'])
 
+                # Check if X1, X3, and X5 are EQUAL (within 0.5% tolerance) - base pattern
                 tolerance = x1_top * 0.005
                 if (abs(x1_top - x3_top) <= tolerance and
                     abs(x1_top - x5_top) <= tolerance and
-                    x7_top > x1_top):
+                    x7_top > x1_top):  # X7 breaks above the resistance
+
+                    pattern_state = self.pattern_states[PatternType.TRIPLE_TOP_BUY]
+                    if not pattern_state.alert_fired:
+                        alerts.append(AlertTrigger(
+                            column=column,
+                            price=price,
+                            alert_type=AlertType.BUY,
+                            pattern_type=PatternType.TRIPLE_TOP_BUY,
+                            trigger_reason=f"🚨 TRIPLE TOP BUY WITH FOLLOW THROUGH: Price {price:.2f} breaks above resistance {x1_top:.2f} after triple top formation + follow-through",
+                            is_first_occurrence=True
+                        ))
+                        pattern_state.alert_fired = True
+                        return  # Found triple top with follow-through
+
+        # Check for Quadruple Top Buy with Follow Through: X-O-X-O-X-O-X-O-X (9 columns)
+        # This is a complete pattern where X1, X3, X5, X7 are EQUAL and X9 breaks ABOVE
+        if len(col_nums) >= 9:
+            last_9 = col_nums[-9:]
+            pattern = [columns[c]['symbol'] for c in last_9]
+
+            if pattern == ['X', 'O', 'X', 'O', 'X', 'O', 'X', 'O', 'X']:
+                # Get tops of all X columns
+                x1_top = max(columns[last_9[0]]['prices'])
+                x3_top = max(columns[last_9[2]]['prices'])
+                x5_top = max(columns[last_9[4]]['prices'])
+                x7_top = max(columns[last_9[6]]['prices'])
+                x9_top = max(columns[last_9[8]]['prices'])
+
+                # Check if X1, X3, X5, and X7 are EQUAL (within 0.5% tolerance) - base pattern
+                tolerance = x1_top * 0.005
+                if (abs(x1_top - x3_top) <= tolerance and
+                    abs(x1_top - x5_top) <= tolerance and
+                    abs(x1_top - x7_top) <= tolerance and
+                    x9_top > x1_top):  # X9 breaks above the resistance
+
                     pattern_state = self.pattern_states[PatternType.QUADRUPLE_TOP_BUY]
                     if not pattern_state.alert_fired:
                         alerts.append(AlertTrigger(
@@ -614,11 +644,11 @@ class PatternDetector:
                             price=price,
                             alert_type=AlertType.BUY,
                             pattern_type=PatternType.QUADRUPLE_TOP_BUY,
-                            trigger_reason=f"🚨 QUADRUPLE TOP BUY: Price {price:.2f} breaks above resistance {x1_top:.2f} after 3 equal tops",
+                            trigger_reason=f"🚨 QUADRUPLE TOP BUY WITH FOLLOW THROUGH: Price {price:.2f} breaks above resistance {x1_top:.2f} after quadruple top formation + follow-through",
                             is_first_occurrence=True
                         ))
                         pattern_state.alert_fired = True
-                        return
+                        return  # Found quadruple top with follow-through
 
         # Check for Double Top Buy: X-O-X (3 columns minimum)
         if len(col_nums) >= 3:
@@ -644,64 +674,122 @@ class PatternDetector:
 
     def _check_multiple_bottom_breakdown(self, data: Dict, column: int, price: float,
                                        current_index: int, alerts: List[AlertTrigger], latest_column: int):
-        """Check for double/triple/quadruple bottom sell patterns with follow-through."""
-        # Find distinct bottoms from different columns (lowest O in each column)
-        column_lows = {}
-        for i in range(current_index):
-            if (data['symbols'][i] == 'O' and
-                data['x_coords'][i] < latest_column):  # From previous columns only
-                col = data['x_coords'][i]
-                if col not in column_lows or data['y_coords'][i] < column_lows[col]:
-                    column_lows[col] = data['y_coords'][i]
+        """
+        Check for double/triple/quadruple bottom sell patterns with follow-through based on P&F definition.
 
-        if len(column_lows) < 2:  # Need at least 2 previous columns with O's
+        Pattern structures:
+        - Double Bottom Sell: O-X-O where final O breaks below first O
+        - Triple Bottom Sell: O-X-O-X-O where O1 & O3 are EQUAL, O5 breaks below
+        - Quadruple Bottom Sell: O-X-O-X-O-X-O where O1, O3, O5 are EQUAL, O7 breaks below
+        """
+        # Build column structure: find all columns and their types
+        columns = {}
+        for i in range(current_index + 1):
+            col = data['x_coords'][i]
+            sym = data['symbols'][i]
+            price_val = data['y_coords'][i]
+
+            if col not in columns:
+                columns[col] = {'symbol': sym, 'prices': []}
+            columns[col]['prices'].append(price_val)
+
+        # Get sorted column numbers
+        col_nums = sorted(columns.keys())
+
+        if len(col_nums) < 3:  # Need at least 3 columns for double bottom (O-X-O)
             return
 
-        # Get the distinct column lows
-        distinct_lows = list(column_lows.values())
-        lowest_previous = min(distinct_lows)
+        # Current column must be O
+        if columns[latest_column]['symbol'] != 'O':
+            return
 
-        # Count how many distinct bottoms are at similar levels (within 1% tolerance)
-        support_level = lowest_previous
-        tolerance = support_level * 0.01  # 1% tolerance
+        # Check for Triple Bottom Sell with Follow Through: O-X-O-X-O-X-O (7 columns)
+        # This is a complete pattern where O1, O3, O5 are EQUAL and O7 breaks BELOW
+        if len(col_nums) >= 7:
+            last_7 = col_nums[-7:]
+            pattern = [columns[c]['symbol'] for c in last_7]
 
-        similar_bottoms = []
-        for low in distinct_lows:
-            if abs(low - support_level) <= tolerance:
-                similar_bottoms.append(low)
+            if pattern == ['O', 'X', 'O', 'X', 'O', 'X', 'O']:
+                # Get bottoms of all O columns
+                o1_bottom = min(columns[last_7[0]]['prices'])
+                o3_bottom = min(columns[last_7[2]]['prices'])
+                o5_bottom = min(columns[last_7[4]]['prices'])
+                o7_bottom = min(columns[last_7[6]]['prices'])
 
-        num_attempts = len(similar_bottoms)
+                # Check if O1, O3, and O5 are EQUAL (within 0.5% tolerance) - base pattern
+                tolerance = o1_bottom * 0.005
+                if (abs(o1_bottom - o3_bottom) <= tolerance and
+                    abs(o1_bottom - o5_bottom) <= tolerance and
+                    o7_bottom < o1_bottom):  # O7 breaks below the support
 
-        # Determine pattern type based on number of DISTINCT similar bottoms
-        # For triple bottom, we need exactly 3 distinct bottoms at similar levels
-        if num_attempts >= 4:
-            pattern_type = PatternType.QUADRUPLE_BOTTOM_SELL
-            pattern_name = "QUADRUPLE BOTTOM SELL"
-        elif num_attempts == 3:
-            pattern_type = PatternType.TRIPLE_BOTTOM_SELL
-            pattern_name = "TRIPLE BOTTOM SELL"
-        elif num_attempts == 2:
-            pattern_type = PatternType.DOUBLE_BOTTOM_SELL
-            pattern_name = "DOUBLE BOTTOM SELL"
-        else:
-            return  # Not enough distinct similar bottoms for a pattern
+                    pattern_state = self.pattern_states[PatternType.TRIPLE_BOTTOM_SELL]
+                    if not pattern_state.alert_fired:
+                        alerts.append(AlertTrigger(
+                            column=column,
+                            price=price,
+                            alert_type=AlertType.SELL,
+                            pattern_type=PatternType.TRIPLE_BOTTOM_SELL,
+                            trigger_reason=f"🚨 TRIPLE BOTTOM SELL WITH FOLLOW THROUGH: Price {price:.2f} breaks below support {o1_bottom:.2f} after triple bottom formation + follow-through",
+                            is_first_occurrence=True
+                        ))
+                        pattern_state.alert_fired = True
+                        return  # Found triple bottom with follow-through
 
-        # Check if we haven't already fired this pattern alert
-        pattern_state = self.pattern_states[pattern_type]
+        # Check for Quadruple Bottom Sell with Follow Through: O-X-O-X-O-X-O-X-O (9 columns)
+        # This is a complete pattern where O1, O3, O5, O7 are EQUAL and O9 breaks BELOW
+        if len(col_nums) >= 9:
+            last_9 = col_nums[-9:]
+            pattern = [columns[c]['symbol'] for c in last_9]
 
-        # Fire alert if price breaks below support with follow-through
-        if price < lowest_previous and not pattern_state.alert_fired:
-            # Additional validation: ensure we have proper pattern formation
-            if self._validate_bottom_pattern(similar_bottoms, num_attempts):
-                alerts.append(AlertTrigger(
-                    column=column,
-                    price=price,
-                    alert_type=AlertType.SELL,
-                    pattern_type=pattern_type,
-                    trigger_reason=f"🚨 {pattern_name}: Price {price:.2f} breaks below support {lowest_previous:.2f} after {num_attempts} distinct similar bottoms with follow-through",
-                    is_first_occurrence=True
-                ))
-                pattern_state.alert_fired = True
+            if pattern == ['O', 'X', 'O', 'X', 'O', 'X', 'O', 'X', 'O']:
+                # Get bottoms of all O columns
+                o1_bottom = min(columns[last_9[0]]['prices'])
+                o3_bottom = min(columns[last_9[2]]['prices'])
+                o5_bottom = min(columns[last_9[4]]['prices'])
+                o7_bottom = min(columns[last_9[6]]['prices'])
+                o9_bottom = min(columns[last_9[8]]['prices'])
+
+                # Check if O1, O3, O5, and O7 are EQUAL (within 0.5% tolerance) - base pattern
+                tolerance = o1_bottom * 0.005
+                if (abs(o1_bottom - o3_bottom) <= tolerance and
+                    abs(o1_bottom - o5_bottom) <= tolerance and
+                    abs(o1_bottom - o7_bottom) <= tolerance and
+                    o9_bottom < o1_bottom):  # O9 breaks below the support
+
+                    pattern_state = self.pattern_states[PatternType.QUADRUPLE_BOTTOM_SELL]
+                    if not pattern_state.alert_fired:
+                        alerts.append(AlertTrigger(
+                            column=column,
+                            price=price,
+                            alert_type=AlertType.SELL,
+                            pattern_type=PatternType.QUADRUPLE_BOTTOM_SELL,
+                            trigger_reason=f"🚨 QUADRUPLE BOTTOM SELL WITH FOLLOW THROUGH: Price {price:.2f} breaks below support {o1_bottom:.2f} after quadruple bottom formation + follow-through",
+                            is_first_occurrence=True
+                        ))
+                        pattern_state.alert_fired = True
+                        return  # Found quadruple bottom with follow-through
+
+        # Check for Double Bottom Sell: O-X-O (3 columns minimum) - this one is correct as-is
+        if len(col_nums) >= 3:
+            last_3 = col_nums[-3:]
+            pattern = [columns[c]['symbol'] for c in last_3]
+
+            if pattern == ['O', 'X', 'O']:
+                o1_bottom = min(columns[last_3[0]]['prices'])
+                o3_bottom = min(columns[last_3[2]]['prices'])
+
+                if o3_bottom < o1_bottom:
+                    pattern_state = self.pattern_states[PatternType.DOUBLE_BOTTOM_SELL]
+                    if not pattern_state.alert_fired:
+                        alerts.append(AlertTrigger(
+                            column=column,
+                            price=price,
+                            alert_type=AlertType.SELL,
+                            pattern_type=PatternType.DOUBLE_BOTTOM_SELL,
+                            trigger_reason=f"🚨 DOUBLE BOTTOM SELL: Price {price:.2f} breaks below previous bottom {o1_bottom:.2f}",
+                            is_first_occurrence=True
+                        ))
+                        pattern_state.alert_fired = True
 
     def _check_ema_validated_top_breakout(self, data: Dict, column: int, price: float,
                                         current_index: int, alerts: List[AlertTrigger], latest_column: int, ema_20: float):
@@ -918,12 +1006,15 @@ class PatternDetector:
         """
         Check for Turtle Breakout Follow Through (FT) Buy pattern.
 
-        Pattern requirements:
-        1. Initial turtle breakout: X breaks above 5-column high
-        2. Follow through: Followed by a double top buy pattern
-        3. This confirms the initial bullish turtle breakout
+        Pattern requirements (from reference image):
+        1. Consolidation: 5 consecutive columns with highs at or below a resistance level (base building)
+        2. Initial turtle breakout: X breaks above the consolidation resistance
+        3. Follow through: Double top buy pattern after turtle breakout
+        4. Final breakout: X breaks above double top resistance
+
+        The turtle pattern identifies a consolidation base of 5 columns before the breakout.
         """
-        if len(data['symbols']) < 10:  # Need sufficient data
+        if len(data['symbols']) < 15:  # Need sufficient data
             return
 
         # Only process if we're in the latest column
@@ -940,59 +1031,61 @@ class PatternDetector:
         if current_symbol != 'X':
             return
 
-        # Step 1: Check for initial turtle breakout (5-column high break)
-        lookback_columns = 5
+        # Get all columns
         all_columns = sorted(set(data['x_coords']))
 
-        if len(all_columns) < lookback_columns + 2:  # Need extra columns for follow-through
-            return
+        # Build column data structure
+        columns = {}
+        for col in all_columns:
+            col_indices = [i for i in range(len(data['symbols'])) if data['x_coords'][i] == col]
+            if col_indices:
+                columns[col] = {
+                    'symbol': data['symbols'][col_indices[0]],
+                    'high': max([data['y_coords'][i] for i in col_indices]),
+                    'low': min([data['y_coords'][i] for i in col_indices])
+                }
 
-        # Find the 5-column high before the current breakout area
+        # Step 1: Look for 5 consecutive columns forming a consolidation base
+        # (highs at or below a resistance level)
         turtle_breakout_found = False
-        turtle_breakout_price = 0
         turtle_breakout_column = 0
+        consolidation_resistance = 0
 
-        # Look for turtle breakout in recent history (not too far back)
-        for check_col in range(max(1, latest_column - 10), latest_column):
-            if check_col not in all_columns:
+        # Check recent history for turtle breakout pattern
+        for check_col in range(6, latest_column):  # Start from column 6 (need 5 before it)
+            if check_col not in all_columns or columns[check_col]['symbol'] != 'X':
                 continue
 
-            # Get 5 columns before this check column
-            start_range = max(1, check_col - lookback_columns)
-            range_columns = [c for c in all_columns if start_range <= c < check_col]
+            # Get the 5 consecutive columns before this X column
+            prev_5_cols = [check_col - 5, check_col - 4, check_col - 3, check_col - 2, check_col - 1]
 
-            if len(range_columns) < lookback_columns:
+            # Check if all 5 previous columns exist
+            if not all(c in columns for c in prev_5_cols):
                 continue
 
-            # Find highest X in the 5-column range
-            range_high = 0
-            for i in range(len(data['symbols'])):
-                if (data['x_coords'][i] in range_columns and
-                    data['symbols'][i] == 'X' and
-                    data['y_coords'][i] > range_high):
-                    range_high = data['y_coords'][i]
+            # Find the highest high among the 5 consecutive columns (consolidation resistance)
+            consolidation_highs = [columns[c]['high'] for c in prev_5_cols]
+            resistance_level = max(consolidation_highs)
 
-            if range_high == 0:
-                continue
+            # Check if this X column breaks above the consolidation resistance
+            x_high = columns[check_col]['high']
 
-            # Check if this column broke above the 5-column high
-            col_high = 0
-            for i in range(len(data['symbols'])):
-                if (data['x_coords'][i] == check_col and
-                    data['symbols'][i] == 'X' and
-                    data['y_coords'][i] > col_high):
-                    col_high = data['y_coords'][i]
+            # Verify consolidation: all 5 columns should have highs at or below resistance
+            # (allowing small tolerance for P&F rounding)
+            tolerance = resistance_level * 0.01  # 1% tolerance
+            is_consolidation = all(columns[c]['high'] <= resistance_level + tolerance for c in prev_5_cols)
 
-            if col_high > range_high:
+            if is_consolidation and x_high > resistance_level:
+                # Found turtle breakout!
                 turtle_breakout_found = True
-                turtle_breakout_price = range_high
                 turtle_breakout_column = check_col
+                turtle_breakout_price = resistance_level
                 break
 
         if not turtle_breakout_found:
             return
 
-        # Step 2: Check for double top follow-through pattern after turtle breakout
+        # Step 3: Check for double top follow-through pattern after turtle breakout
         # Look for at least 2 X columns at similar resistance levels after turtle breakout
         x_columns_after_turtle = {}
         for i in range(len(data['symbols'])):
@@ -1039,7 +1132,7 @@ class PatternDetector:
                 price=price,
                 alert_type=AlertType.BUY,
                 pattern_type=PatternType.TURTLE_BREAKOUT_FT_BUY,
-                trigger_reason=f"🚨 TURTLE BREAKOUT FT BUY: Price {price:.2f} breaks above double top resistance {resistance_level:.2f} after turtle breakout above {turtle_breakout_price:.2f}. Follow-through confirms bullish momentum.{ema_condition}",
+                trigger_reason=f"🚨 TURTLE BREAKOUT FT BUY: Price {price:.2f} breaks above double top resistance {resistance_level:.2f} after turtle breakout above {turtle_breakout_price:.2f} (5-O-column high). Follow-through confirms bullish momentum.{ema_condition}",
                 is_first_occurrence=True
             ))
             pattern_state.alert_fired = True
@@ -1049,12 +1142,15 @@ class PatternDetector:
         """
         Check for Turtle Breakout Follow Through (FT) Sell pattern.
 
-        Pattern requirements:
-        1. Initial turtle breakout: O breaks below 5-column low
-        2. Follow through: Followed by a double bottom sell pattern
-        3. This confirms the initial bearish turtle breakout
+        Pattern requirements (from reference image):
+        1. Consolidation: 5 consecutive columns with lows at or above a support level (base building)
+        2. Initial turtle breakout: O breaks below the consolidation support
+        3. Follow through: Double bottom sell pattern after turtle breakout
+        4. Final breakdown: O breaks below double bottom support
+
+        The turtle pattern identifies a consolidation base of 5 columns before the breakout.
         """
-        if len(data['symbols']) < 10:  # Need sufficient data
+        if len(data['symbols']) < 15:  # Need sufficient data
             return
 
         # Only process if we're in the latest column
@@ -1071,68 +1167,69 @@ class PatternDetector:
         if current_symbol != 'O':
             return
 
-        # Step 1: Check for initial turtle breakout (5-column low break)
-        lookback_columns = 5
+        # Get all columns
         all_columns = sorted(set(data['x_coords']))
 
-        if len(all_columns) < lookback_columns + 2:  # Need extra columns for follow-through
-            return
+        # Build column data structure
+        columns = {}
+        for col in all_columns:
+            col_indices = [i for i in range(len(data['symbols'])) if data['x_coords'][i] == col]
+            if col_indices:
+                columns[col] = {
+                    'symbol': data['symbols'][col_indices[0]],
+                    'high': max([data['y_coords'][i] for i in col_indices]),
+                    'low': min([data['y_coords'][i] for i in col_indices])
+                }
 
-        # Find the 5-column low before the current breakout area
+        # Step 1: Look for 5 consecutive columns forming a consolidation base
+        # (lows at or above a support level)
         turtle_breakout_found = False
-        turtle_breakout_price = 0
         turtle_breakout_column = 0
+        consolidation_support = 0
 
-        # Look for turtle breakout in recent history (not too far back)
-        for check_col in range(max(1, latest_column - 10), latest_column):
-            if check_col not in all_columns:
+        # Check recent history for turtle breakout pattern
+        for check_col in range(6, latest_column):  # Start from column 6 (need 5 before it)
+            if check_col not in all_columns or columns[check_col]['symbol'] != 'O':
                 continue
 
-            # Get 5 columns before this check column
-            start_range = max(1, check_col - lookback_columns)
-            range_columns = [c for c in all_columns if start_range <= c < check_col]
+            # Get the 5 consecutive columns before this O column
+            prev_5_cols = [check_col - 5, check_col - 4, check_col - 3, check_col - 2, check_col - 1]
 
-            if len(range_columns) < lookback_columns:
+            # Check if all 5 previous columns exist
+            if not all(c in columns for c in prev_5_cols):
                 continue
 
-            # Find lowest O in the 5-column range
-            range_low = float('inf')
-            for i in range(len(data['symbols'])):
-                if (data['x_coords'][i] in range_columns and
-                    data['symbols'][i] == 'O' and
-                    data['y_coords'][i] < range_low):
-                    range_low = data['y_coords'][i]
+            # Find the lowest low among the 5 consecutive columns (consolidation support)
+            consolidation_lows = [columns[c]['low'] for c in prev_5_cols]
+            support_level = min(consolidation_lows)
 
-            if range_low == float('inf'):
-                continue
+            # Check if this O column breaks below the consolidation support
+            o_low = columns[check_col]['low']
 
-            # Check if this column broke below the 5-column low
-            col_low = float('inf')
-            for i in range(len(data['symbols'])):
-                if (data['x_coords'][i] == check_col and
-                    data['symbols'][i] == 'O' and
-                    data['y_coords'][i] < col_low):
-                    col_low = data['y_coords'][i]
+            # Verify consolidation: all 5 columns should have lows at or above support
+            # (allowing small tolerance for P&F rounding)
+            tolerance = support_level * 0.01  # 1% tolerance
+            is_consolidation = all(columns[c]['low'] >= support_level - tolerance for c in prev_5_cols)
 
-            if col_low < range_low:
+            if is_consolidation and o_low < support_level:
+                # Found turtle breakout!
                 turtle_breakout_found = True
-                turtle_breakout_price = range_low
                 turtle_breakout_column = check_col
+                consolidation_support = support_level
                 break
 
         if not turtle_breakout_found:
             return
 
         # Step 2: Check for double bottom follow-through pattern after turtle breakout
-        # Look for at least 2 O columns at similar support levels after turtle breakout
+        # Get all O columns after the turtle breakout
         o_columns_after_turtle = {}
-        for i in range(len(data['symbols'])):
-            if (data['symbols'][i] == 'O' and
-                data['x_coords'][i] > turtle_breakout_column and
-                data['x_coords'][i] <= latest_column):
-                col = data['x_coords'][i]
-                if col not in o_columns_after_turtle or data['y_coords'][i] < o_columns_after_turtle[col]:
-                    o_columns_after_turtle[col] = data['y_coords'][i]
+        for col in all_columns:
+            if col <= turtle_breakout_column or col not in columns:
+                continue
+
+            if columns[col]['symbol'] == 'O':
+                o_columns_after_turtle[col] = columns[col]['low']
 
         if len(o_columns_after_turtle) < 2:  # Need at least 2 O columns for double bottom
             return
@@ -1146,12 +1243,12 @@ class PatternDetector:
         if len(o_column_lows_before_current) < 2:  # Need at least 2 previous O columns for double bottom
             return
 
-        # Find the support level from previous columns
-        support_level = min(o_column_lows_before_current)
+        # Find the support level from previous O columns (double bottom support)
+        double_bottom_support = min(o_column_lows_before_current)
 
         # Count O columns at similar support level (within 0.5% tolerance)
-        tolerance = support_level * 0.005
-        similar_lows = [l for l in o_column_lows_before_current if abs(l - support_level) <= tolerance]
+        tolerance = double_bottom_support * 0.005
+        similar_lows = [l for l in o_column_lows_before_current if abs(l - double_bottom_support) <= tolerance]
 
         if len(similar_lows) < 2:  # Need at least double bottom
             return
@@ -1160,7 +1257,7 @@ class PatternDetector:
         pattern_state = self.pattern_states[PatternType.TURTLE_BREAKOUT_FT_SELL]
 
         # Fire alert if current O breaks below the double bottom support (follow-through)
-        if price < support_level and not pattern_state.alert_fired:
+        if price < double_bottom_support and not pattern_state.alert_fired:
             ema_condition = ""
             if ema_20 and price < ema_20:
                 ema_condition = f" Chart below 20 EMA ({ema_20:.2f})"
@@ -1170,7 +1267,7 @@ class PatternDetector:
                 price=price,
                 alert_type=AlertType.SELL,
                 pattern_type=PatternType.TURTLE_BREAKOUT_FT_SELL,
-                trigger_reason=f"🚨 TURTLE BREAKOUT FT SELL: Price {price:.2f} breaks below double bottom support {support_level:.2f} after turtle breakout below {turtle_breakout_price:.2f}. Follow-through confirms bearish momentum.{ema_condition}",
+                trigger_reason=f"🚨 TURTLE BREAKOUT FT SELL: Price {price:.2f} breaks below double bottom support {double_bottom_support:.2f} after turtle breakout below {consolidation_support:.2f} (5-column consolidation). Follow-through confirms bearish momentum.{ema_condition}",
                 is_first_occurrence=True
             ))
             pattern_state.alert_fired = True
@@ -1180,15 +1277,17 @@ class PatternDetector:
     def _check_catapult_buy(self, data: Dict, column: int, price: float,
                            current_index: int, alerts: List[AlertTrigger], latest_column: int, ema_20: float = None):
         """
-        Check for catapult buy pattern based on P&F definition:
-        Catapult Buy = Triple Top Buy followed by Double Top Buy
+        Check for CATAPULT BUY pattern based on traditional P&F definition:
 
-        Pattern structure:
-        1. Triple Top Buy (TTB): X-O-X-O-X where cols 1&3 equal, col 5 breaks above
-        2. Double Top Buy (DTB): After TTB, next X-O-X where final X breaks above
+        A bullish catapult pattern is a Triple Top Buy followed by a Double Top Buy.
 
-        Total pattern: X-O-X-O-X-O-X (7 columns minimum)
-        Note: May have initial O column, so check both 7 and 8 column patterns
+        Pattern structure (from image):
+        1. Triple Top Buy (TTB): X-O-X-O-X where X1 & X3 equal, X5 breaks above
+        2. Double Top Buy (DTB): X-O-X where X7 breaks above X5
+        3. CATAPULT BUY: Alert triggers at column 7 (X7)
+
+        Total pattern: X-O-X-O-X-O-X (7 columns)
+        Alert fires when X7 breaks above X5
         """
         # Build column structure
         columns = {}
@@ -1203,141 +1302,135 @@ class PatternDetector:
 
         col_nums = sorted(columns.keys())
 
-        # Current column must be X
+        # Current column must be X for catapult buy
         if columns[latest_column]['symbol'] != 'X':
             return
 
-        # Try to find X-O-X-O-X-O-X pattern in last 7 or 8 columns
-        # Check 8 columns first (with initial O), then 7 columns
-        for num_cols in [8, 7]:
-            if len(col_nums) < num_cols:
-                continue
+        # Need at least 7 columns for the pattern: X-O-X-O-X-O-X
+        if len(col_nums) < 7:
+            return
 
-            last_n = col_nums[-num_cols:]
-            pattern = [columns[c]['symbol'] for c in last_n]
+        # Check last 7 columns for X-O-X-O-X-O-X pattern
+        last_7 = col_nums[-7:]
+        pattern = [columns[c]['symbol'] for c in last_7]
 
-            # Look for X-O-X-O-X-O-X pattern
-            # It might be at the end, or preceded by an O
-            if num_cols == 8 and pattern == ['O', 'X', 'O', 'X', 'O', 'X', 'O', 'X']:
-                # Pattern starts at index 1
-                x_indices = [1, 3, 5, 7]
-            elif num_cols == 7 and pattern == ['X', 'O', 'X', 'O', 'X', 'O', 'X']:
-                # Pattern starts at index 0
-                x_indices = [0, 2, 4, 6]
-            else:
-                continue
+        if pattern != ['X', 'O', 'X', 'O', 'X', 'O', 'X']:
+            return
 
-            # Get tops of X columns
-            x1_top = max(columns[last_n[x_indices[0]]]['prices'])
-            x3_top = max(columns[last_n[x_indices[1]]]['prices'])
-            x5_top = max(columns[last_n[x_indices[2]]]['prices'])  # TTB breakout
+        # Extract X column tops (indices 0, 2, 4, 6)
+        x1_top = max(columns[last_7[0]]['prices'])
+        x3_top = max(columns[last_7[2]]['prices'])
+        x5_top = max(columns[last_7[4]]['prices'])  # TTB breakout
 
-            # For X7, use the CURRENT PRICE if we're in column 7, otherwise use column top
-            if last_n[x_indices[3]] == latest_column:
-                x7_top = price  # Use current price for live detection
-            else:
-                x7_top = max(columns[last_n[x_indices[3]]]['prices'])
+        # For X7 (current), use current price for live detection
+        if last_7[6] == latest_column:
+            x7_top = price  # Current price
+        else:
+            x7_top = max(columns[last_7[6]]['prices'])
 
-            tolerance = x1_top * 0.005
+        tolerance = x1_top * 0.005
 
-            # Validate Triple Top Buy: X1 & X3 equal, X5 breaks above
-            if abs(x1_top - x3_top) > tolerance:
-                continue  # X1 and X3 must be equal
+        # Validate Triple Top Buy: X1 & X3 equal, X5 breaks above
+        if abs(x1_top - x3_top) > tolerance:
+            return  # X1 and X3 must be approximately equal
 
-            if x5_top <= x1_top:
-                continue  # X5 must break above X1/X3
+        if x5_top <= x1_top:
+            return  # X5 must break above X1/X3
 
-            # Validate Double Top Buy: X7 (current price) breaks above X5
-            if x7_top <= x5_top:
-                continue  # X7 must break above X5
+        # CATAPULT BUY: X7 (current) must break ABOVE X5 (Double Top Buy)
+        if x7_top <= x5_top:
+            return  # X7 must break above X5
 
-            # Check if we haven't already fired this pattern alert
-            pattern_state = self.pattern_states[PatternType.CATAPULT_BUY]
+        # Check if we haven't already fired this pattern alert
+        pattern_state = self.pattern_states[PatternType.CATAPULT_BUY]
 
-            if not pattern_state.alert_fired:
-                ema_condition = ""
-                if ema_20 and price > ema_20:
-                    ema_condition = f" Chart above 20 EMA ({ema_20:.2f})"
+        if not pattern_state.alert_fired:
+            ema_condition = ""
+            if ema_20 and price > ema_20:
+                ema_condition = f" Chart above 20 EMA ({ema_20:.2f})"
 
-                alerts.append(AlertTrigger(
-                    column=column,
-                    price=price,
-                    alert_type=AlertType.BUY,
-                    pattern_type=PatternType.CATAPULT_BUY,
-                    trigger_reason=f"🚨 CATAPULT BUY: Price {price:.2f} breaks above {x5_top:.2f}. Triple Top ({x1_top:.2f}) + Double Top ({x5_top:.2f}) = Catapult!{ema_condition}",
-                    is_first_occurrence=True
-                ))
-                pattern_state.alert_fired = True
-                return  # Found and fired, exit
+            alerts.append(AlertTrigger(
+                column=column,
+                price=price,
+                alert_type=AlertType.BUY,
+                pattern_type=PatternType.CATAPULT_BUY,
+                trigger_reason=f"🚨 CATAPULT BUY: Price {price:.2f} breaks above {x5_top:.2f}. Triple Top Buy ({x1_top:.2f}) + Double Top Buy = Catapult Buy!{ema_condition}",
+                is_first_occurrence=True
+            ))
+            pattern_state.alert_fired = True
+            return  # Found and fired, exit
 
     def _check_catapult_sell(self, data: Dict, column: int, price: float,
                             current_index: int, alerts: List[AlertTrigger], latest_column: int, ema_20: float = None):
         """
-        Check for catapult sell pattern based on the user's image:
-        Triple top buy pattern followed by double top buy pattern, then O breaks below support.
+        Check for CATAPULT SELL pattern based on traditional P&F definition:
 
-        Pattern structure from image:
-        1. Multiple X columns reaching similar high levels (triple/multiple top formation)
-        2. O column enters the territory and crosses below the breakdown level
-        3. This creates a catapult effect - strong sell signal
+        A bearish catapult pattern is a Triple Bottom Sell followed by a Double Bottom Sell.
+
+        Pattern structure (from image):
+        1. Triple Bottom Sell (TBS): O-X-O-X-O where O1 & O3 equal, O5 breaks below
+        2. Double Bottom Sell (DBS): O-X-O where O7 breaks below O5
+        3. CATAPULT SELL: Alert triggers at column 7 (O7)
+
+        Total pattern: O-X-O-X-O-X-O (7 columns)
+        Alert fires when O7 breaks below O5
         """
-        if len(data['symbols']) < 7:  # Need sufficient data for pattern
+        # Build column structure
+        columns = {}
+        for i in range(current_index + 1):
+            col = data['x_coords'][i]
+            sym = data['symbols'][i]
+            price_val = data['y_coords'][i]
+
+            if col not in columns:
+                columns[col] = {'symbol': sym, 'prices': []}
+            columns[col]['prices'].append(price_val)
+
+        col_nums = sorted(columns.keys())
+
+        # Current column must be O for catapult sell
+        if columns[latest_column]['symbol'] != 'O':
             return
 
-        # Only process if we're in the latest column and it's an O column
-        if column != latest_column:
+        # Need at least 7 columns for the pattern: O-X-O-X-O-X-O
+        if len(col_nums) < 7:
             return
 
-        # Must be an O symbol for sell signal
-        current_symbol = None
-        for i in range(len(data['x_coords'])):
-            if data['x_coords'][i] == column and data['y_coords'][i] == price:
-                current_symbol = data['symbols'][i]
-                break
+        # Check last 7 columns for O-X-O-X-O-X-O pattern
+        last_7 = col_nums[-7:]
+        pattern = [columns[c]['symbol'] for c in last_7]
 
-        if current_symbol != 'O':
+        if pattern != ['O', 'X', 'O', 'X', 'O', 'X', 'O']:
             return
 
-        # Find all previous X columns and their highest points
-        x_column_highs = {}
-        for i in range(current_index):
-            if (data['symbols'][i] == 'X' and
-                data['x_coords'][i] < latest_column):
-                col = data['x_coords'][i]
-                if col not in x_column_highs or data['y_coords'][i] > x_column_highs[col]:
-                    x_column_highs[col] = data['y_coords'][i]
+        # Extract O column bottoms (indices 0, 2, 4, 6)
+        o1_bottom = min(columns[last_7[0]]['prices'])
+        o3_bottom = min(columns[last_7[2]]['prices'])
+        o5_bottom = min(columns[last_7[4]]['prices'])  # TBS breakdown
 
-        if len(x_column_highs) < 3:  # Need at least 3 X columns for pattern
-            return
+        # For O7 (current), use current price for live detection
+        if last_7[6] == latest_column:
+            o7_bottom = price  # Current price
+        else:
+            o7_bottom = min(columns[last_7[6]]['prices'])
 
-        # Find the highest resistance level from X columns
-        resistance_level = max(x_column_highs.values())
-        tolerance = resistance_level * 0.02  # 2% tolerance
+        tolerance = o1_bottom * 0.005
 
-        # Count how many X columns hit similar high levels (triple top formation)
-        similar_highs = [high for high in x_column_highs.values()
-                        if abs(high - resistance_level) <= tolerance]
+        # Validate Triple Bottom Sell: O1 & O3 equal, O5 breaks below
+        if abs(o1_bottom - o3_bottom) > tolerance:
+            return  # O1 and O3 must be approximately equal
 
-        if len(similar_highs) < 3:  # Need at least triple top
-            return
+        if o5_bottom >= o1_bottom:
+            return  # O5 must break below O1/O3
 
-        # Find previous support level (lowest O before current column)
-        previous_o_lows = []
-        for i in range(current_index):
-            if (data['symbols'][i] == 'O' and
-                data['x_coords'][i] < latest_column):
-                previous_o_lows.append(data['y_coords'][i])
-
-        if not previous_o_lows:
-            return
-
-        support_level = min(previous_o_lows)
+        # CATAPULT SELL: O7 (current) must break BELOW O5 (Double Bottom Sell)
+        if o7_bottom >= o5_bottom:
+            return  # O7 must break below O5
 
         # Check if we haven't already fired this pattern alert
         pattern_state = self.pattern_states[PatternType.CATAPULT_SELL]
 
-        # Fire alert if current O breaks below previous support (catapult effect)
-        if price < support_level and not pattern_state.alert_fired:
+        if not pattern_state.alert_fired:
             ema_condition = ""
             if ema_20 and price < ema_20:
                 ema_condition = f" Chart below 20 EMA ({ema_20:.2f})"
@@ -1347,7 +1440,217 @@ class PatternDetector:
                 price=price,
                 alert_type=AlertType.SELL,
                 pattern_type=PatternType.CATAPULT_SELL,
-                trigger_reason=f"🚨 CATAPULT SELL: Price {price:.2f} breaks below support {support_level:.2f} after {len(similar_highs)} top attempts at {resistance_level:.2f}. Traditional P&F catapult pattern.{ema_condition}",
+                trigger_reason=f"🚨 CATAPULT SELL: Price {price:.2f} breaks below {o5_bottom:.2f}. Triple Bottom Sell ({o1_bottom:.2f}) + Double Bottom Sell = Catapult Sell!{ema_condition}",
+                is_first_occurrence=True
+            ))
+            pattern_state.alert_fired = True
+
+    def _check_ziddi_bulls(self, data: Dict, column: int, price: float,
+                          current_index: int, alerts: List[AlertTrigger], latest_column: int, ema_20: float = None):
+        """
+        Check for ZIDDI BULLS pattern (Stubborn Bulls).
+
+        Pattern indicates bulls are stubborn and not willing to let prices fall.
+
+        Pattern structure (from image):
+        1. Double Bottom Sell #1: O-X-O-X-O (O1 & O3 equal, O5 breaks below)
+        2. Double Bottom Sell #2: O-X-O (O7 breaks below O5) - but price doesn't fall much
+        3. Double Top Buy: X-O-X (X breaks above) - Bulls take control with bear trap
+
+        The pattern shows that despite consecutive double bottom sell signals,
+        the price didn't fall much, and bulls immediately reversed with a double top buy.
+        This indicates bulls are stubborn and likely to push price upward.
+
+        Total pattern: Approximately 9 columns: O-X-O-X-O-X-O-X-O-X
+        Alert triggers when final X breaks above previous X high
+        """
+        # Build column structure
+        columns = {}
+        for i in range(current_index + 1):
+            col = data['x_coords'][i]
+            sym = data['symbols'][i]
+            price_val = data['y_coords'][i]
+
+            if col not in columns:
+                columns[col] = {'symbol': sym, 'prices': []}
+            columns[col]['prices'].append(price_val)
+
+        col_nums = sorted(columns.keys())
+
+        # Current column must be X for ziddi bulls (bullish breakout)
+        if columns[latest_column]['symbol'] != 'X':
+            return
+
+        # Need at least 10 columns for the pattern: O-X-O-X-O-X-O-X-O-X
+        if len(col_nums) < 10:
+            return
+
+        # Check last 10 columns for O-X-O-X-O-X-O-X-O-X pattern
+        last_10 = col_nums[-10:]
+        pattern = [columns[c]['symbol'] for c in last_10]
+
+        if pattern != ['O', 'X', 'O', 'X', 'O', 'X', 'O', 'X', 'O', 'X']:
+            return
+
+        # Extract O column bottoms (indices 0, 2, 4, 6, 8)
+        o1_bottom = min(columns[last_10[0]]['prices'])
+        o3_bottom = min(columns[last_10[2]]['prices'])
+        o5_bottom = min(columns[last_10[4]]['prices'])  # DBS #1 breakdown
+        o7_bottom = min(columns[last_10[6]]['prices'])  # DBS #2 breakdown
+        o9_bottom = min(columns[last_10[8]]['prices'])  # Bear trap
+
+        # Extract X column tops (indices 1, 3, 5, 7, 9)
+        x2_top = max(columns[last_10[1]]['prices'])
+        x4_top = max(columns[last_10[3]]['prices'])
+        x6_top = max(columns[last_10[5]]['prices'])
+        x8_top = max(columns[last_10[7]]['prices'])
+
+        # For X10, always use the maximum price in the column
+        x10_top = max(columns[last_10[9]]['prices'])
+
+        tolerance = o1_bottom * 0.005
+
+        # Validate Double Bottom Sell #1: O1 & O3 equal, O5 breaks below
+        if abs(o1_bottom - o3_bottom) > tolerance:
+            return  # O1 and O3 must be approximately equal
+
+        if o5_bottom >= o1_bottom:
+            return  # O5 must break below O1/O3
+
+        # Validate Double Bottom Sell #2: O7 breaks below O5
+        if o7_bottom >= o5_bottom:
+            return  # O7 must break below O5
+
+        # Key characteristic: Price didn't fall much (stubborn bulls!)
+        total_decline = o1_bottom - o7_bottom
+        max_allowed_decline = o1_bottom * 0.05  # Max 5% decline from first bottom
+
+        if total_decline > max_allowed_decline:
+            return  # Declined too much, not stubborn bulls
+
+        # Validate Double Top Buy: X10 breaks above X8 (and ideally above X6)
+        if x10_top <= x8_top:
+            return  # X10 must break above X8
+
+        # ZIDDI BULLS pattern confirmed!
+        pattern_state = self.pattern_states[PatternType.ZIDDI_BULLS]
+
+        if not pattern_state.alert_fired:
+            ema_condition = ""
+            if ema_20 and price > ema_20:
+                ema_condition = f" Chart above 20 EMA ({ema_20:.2f})"
+
+            alerts.append(AlertTrigger(
+                column=column,
+                price=price,
+                alert_type=AlertType.BUY,
+                pattern_type=PatternType.ZIDDI_BULLS,
+                trigger_reason=f"🚨 ZIDDI BULLS: Price {price:.2f} breaks above {x8_top:.2f}. Stubborn bulls! Failed double bottom sells (O1:{o1_bottom:.2f}, O5:{o5_bottom:.2f}, O7:{o7_bottom:.2f}) reversed with double top buy. Bulls not letting price fall!{ema_condition}",
+                is_first_occurrence=True
+            ))
+            pattern_state.alert_fired = True
+
+    def _check_ziddi_bears(self, data: Dict, column: int, price: float,
+                          current_index: int, alerts: List[AlertTrigger], latest_column: int, ema_20: float = None):
+        """
+        Check for ZIDDI BEARS pattern (Stubborn Bears).
+
+        Pattern indicates bears are stubborn and not willing to let prices rise.
+
+        Pattern structure (from image):
+        1. Double Top Buy #1: X-O-X-O-X (X1 & X3 equal, X5 breaks above)
+        2. Double Top Buy #2: X-O-X (X7 breaks above X5) - but price doesn't rise much
+        3. Double Bottom Sell: O-X-O (O breaks below) - Bears take control with bull trap
+
+        The pattern shows that despite consecutive double top buy signals,
+        the price didn't rise much, and bears immediately reversed with a double bottom sell.
+        This indicates bears are stubborn and likely to push price downward.
+
+        Total pattern: Approximately 9 columns: X-O-X-O-X-O-X-O-X-O
+        Alert triggers when final O breaks below previous O low
+        """
+        # Build column structure
+        columns = {}
+        for i in range(current_index + 1):
+            col = data['x_coords'][i]
+            sym = data['symbols'][i]
+            price_val = data['y_coords'][i]
+
+            if col not in columns:
+                columns[col] = {'symbol': sym, 'prices': []}
+            columns[col]['prices'].append(price_val)
+
+        col_nums = sorted(columns.keys())
+
+        # Current column must be O for ziddi bears (bearish breakdown)
+        if columns[latest_column]['symbol'] != 'O':
+            return
+
+        # Need at least 10 columns for the pattern: X-O-X-O-X-O-X-O-X-O
+        if len(col_nums) < 10:
+            return
+
+        # Check last 10 columns for X-O-X-O-X-O-X-O-X-O pattern
+        last_10 = col_nums[-10:]
+        pattern = [columns[c]['symbol'] for c in last_10]
+
+        if pattern != ['X', 'O', 'X', 'O', 'X', 'O', 'X', 'O', 'X', 'O']:
+            return
+
+        # Extract X column tops (indices 0, 2, 4, 6, 8)
+        x1_top = max(columns[last_10[0]]['prices'])
+        x3_top = max(columns[last_10[2]]['prices'])
+        x5_top = max(columns[last_10[4]]['prices'])  # DTB #1 breakout
+        x7_top = max(columns[last_10[6]]['prices'])  # DTB #2 breakout
+        x9_top = max(columns[last_10[8]]['prices'])  # Bull trap
+
+        # Extract O column bottoms (indices 1, 3, 5, 7, 9)
+        o2_bottom = min(columns[last_10[1]]['prices'])
+        o4_bottom = min(columns[last_10[3]]['prices'])
+        o6_bottom = min(columns[last_10[5]]['prices'])
+        o8_bottom = min(columns[last_10[7]]['prices'])
+
+        # For O10, always use the minimum price in the column
+        o10_bottom = min(columns[last_10[9]]['prices'])
+
+        tolerance = x1_top * 0.005
+
+        # Validate Double Top Buy #1: X1 & X3 equal, X5 breaks above
+        if abs(x1_top - x3_top) > tolerance:
+            return  # X1 and X3 must be approximately equal
+
+        if x5_top <= x1_top:
+            return  # X5 must break above X1/X3
+
+        # Validate Double Top Buy #2: X7 breaks above X5
+        if x7_top <= x5_top:
+            return  # X7 must break above X5
+
+        # Key characteristic: Price didn't rise much (stubborn bears!)
+        total_rise = x7_top - x1_top
+        max_allowed_rise = x1_top * 0.05  # Max 5% rise from first top
+
+        if total_rise > max_allowed_rise:
+            return  # Rose too much, not stubborn bears
+
+        # Validate Double Bottom Sell: O10 breaks below O8 (and ideally below O6)
+        if o10_bottom >= o8_bottom:
+            return  # O10 must break below O8
+
+        # ZIDDI BEARS pattern confirmed!
+        pattern_state = self.pattern_states[PatternType.ZIDDI_BEARS]
+
+        if not pattern_state.alert_fired:
+            ema_condition = ""
+            if ema_20 and price < ema_20:
+                ema_condition = f" Chart below 20 EMA ({ema_20:.2f})"
+
+            alerts.append(AlertTrigger(
+                column=column,
+                price=price,
+                alert_type=AlertType.SELL,
+                pattern_type=PatternType.ZIDDI_BEARS,
+                trigger_reason=f"🚨 ZIDDI BEARS: Price {price:.2f} breaks below {o8_bottom:.2f}. Stubborn bears! Failed double top buys (X1:{x1_top:.2f}, X5:{x5_top:.2f}, X7:{x7_top:.2f}) reversed with double bottom sell. Bears not letting price rise!{ema_condition}",
                 is_first_occurrence=True
             ))
             pattern_state.alert_fired = True
@@ -1665,98 +1968,101 @@ class PatternDetector:
     def _check_aft_anchor_breakdown_sell(self, data: Dict, column: int, price: float,
                                        current_index: int, alerts: List[AlertTrigger], latest_column: int, ema_20: float = None):
         """
-        Check for AFT (Anchor Column Follow Through) Bearish Breakdown pattern.
+        Check for AFT (Anchor Column Follow Through) Bearish Breakdown pattern based on P&F definition.
 
         Pattern requirements:
-        1. Anchor Column: A tall O column (strong bearish momentum)
-        2. Consolidation: Price stays within 8 columns after anchor (no break above/below anchor)
-        3. Breakdown: O column breaks below the anchor column low within 8 columns
+        1. Anchor Column: Tall O column (height >= 25 boxes, consistent with bullish pattern)
+        2. Consolidation: Price stays above anchor low for several columns
+        3. Breakdown: On the 4th, 6th, or 8th column after anchor, O column:
+           - Performs Double Bottom Breakdown (breaks below previous O column)
+           - AND breaks below anchor low
         """
-        if len(data['symbols']) < 5:  # Need sufficient data
+        # Build column structure
+        columns = {}
+        for i in range(current_index + 1):
+            col = data['x_coords'][i]
+            sym = data['symbols'][i]
+            price_val = data['y_coords'][i]
+
+            if col not in columns:
+                columns[col] = {'symbol': sym, 'prices': []}
+            columns[col]['prices'].append(price_val)
+
+        col_nums = sorted(columns.keys())
+
+        if len(col_nums) < 5:  # Need at least 5 columns (anchor + 4 more)
             return
 
-        # Only process if we're in the latest column and it's an O column
-        if column != latest_column:
+        # Current column must be O
+        if columns[latest_column]['symbol'] != 'O':
             return
 
-        # Must be an O symbol for sell signal
-        current_symbol = None
-        for i in range(len(data['x_coords'])):
-            if data['x_coords'][i] == column and data['y_coords'][i] == price:
-                current_symbol = data['symbols'][i]
-                break
+        # Find anchor column: tall O column with height >= 25 boxes
+        anchor_col = None
+        anchor_low = None
 
-        if current_symbol != 'O':
+        for i in range(len(col_nums) - 1):  # Don't check last column
+            col = col_nums[i]
+            if columns[col]['symbol'] == 'O':
+                prices = columns[col]['prices']
+                height_boxes = len(prices)
+
+                # Check if this is a tall anchor (25+ boxes)
+                if height_boxes >= 25:
+                    # Check if current column is 4th, 6th, or 8th after this anchor
+                    distance = latest_column - col
+                    if distance in [4, 6, 8]:
+                        anchor_col = col
+                        anchor_low = min(prices)
+                        break
+
+        if anchor_col is None:
             return
 
-        # Find potential anchor columns (tall O columns)
-        anchor_candidates = {}
-        for col_num in range(1, latest_column):
-            # Get all O points in this column
-            o_points_in_col = []
-            for i in range(len(data['symbols'])):
-                if (data['symbols'][i] == 'O' and data['x_coords'][i] == col_num):
-                    o_points_in_col.append(data['y_coords'][i])
+        # Verify no column between anchor and current broke below anchor low
+        for col in col_nums:
+            if anchor_col < col < latest_column:
+                if columns[col]['symbol'] == 'O':
+                    col_low = min(columns[col]['prices'])
+                    if col_low < anchor_low:
+                        return  # Consolidation broken
 
-            if len(o_points_in_col) >= 14:  # Tall column (14+ O symbols)
-                anchor_candidates[col_num] = {
-                    'high': max(o_points_in_col),
-                    'low': min(o_points_in_col),
-                    'height': len(o_points_in_col)
-                }
+        # Check for Double Bottom Breakdown pattern in recent columns
+        # Need at least O-X-O pattern where final O breaks below previous O
+        if len(col_nums) >= 3:
+            last_3 = col_nums[-3:]
+            pattern = [columns[c]['symbol'] for c in last_3]
 
-        if not anchor_candidates:
-            return
+            if pattern == ['O', 'X', 'O']:
+                o1_low = min(columns[last_3[0]]['prices'])
+                o3_low = min(columns[last_3[2]]['prices'])
 
-        # Check each anchor candidate for AFT pattern
-        for anchor_col, anchor_data in anchor_candidates.items():
-            # Check if current column is within 8 columns of anchor
-            if latest_column - anchor_col > 8:
-                continue
+                # O3 must break below O1 (Double Bottom Breakdown)
+                if o3_low >= o1_low:
+                    return
 
-            anchor_low = anchor_data['low']
+                # O3 must also break below anchor low (AFT condition)
+                if o3_low >= anchor_low:
+                    return
 
-            # Check if price stayed within anchor range for consolidation period
-            consolidation_valid = True
-            for check_col in range(anchor_col + 1, latest_column):
-                # Get lowest point in this column
-                col_high = None
-                col_low = None
-                for i in range(len(data['symbols'])):
-                    if data['x_coords'][i] == check_col:
-                        if col_high is None or data['y_coords'][i] > col_high:
-                            col_high = data['y_coords'][i]
-                        if col_low is None or data['y_coords'][i] < col_low:
-                            col_low = data['y_coords'][i]
+                # Check if we haven't already fired this pattern alert
+                pattern_state = self.pattern_states[PatternType.AFT_ANCHOR_BREAKDOWN_SELL]
 
-                # If any column broke below anchor low or above anchor high, invalidate
-                if col_low and col_low < anchor_low:
-                    consolidation_valid = False
-                    break
+                if not pattern_state.alert_fired:
+                    ema_condition = ""
+                    if ema_20 and price < ema_20:
+                        ema_condition = f" Chart below 20 EMA ({ema_20:.2f})"
 
-            if not consolidation_valid:
-                continue
-
-            # Check if we haven't already fired this pattern alert
-            pattern_state = self.pattern_states[PatternType.AFT_ANCHOR_BREAKDOWN_SELL]
-
-            # Fire alert if current O breaks below anchor low (AFT breakdown)
-            if price < anchor_low and not pattern_state.alert_fired:
-                ema_condition = ""
-                if ema_20 and price < ema_20:
-                    ema_condition = f" Chart below 20 EMA ({ema_20:.2f})"
-
-                column_distance = latest_column - anchor_col
-                alerts.append(AlertTrigger(
-                    column=column,
-                    price=price,
-                    alert_type=AlertType.SELL,
-                    pattern_type=PatternType.AFT_ANCHOR_BREAKDOWN_SELL,
-                    trigger_reason=f"🚨 AFT ANCHOR BREAKDOWN SELL: Price {price:.2f} breaks below anchor low {anchor_low:.2f} after {column_distance}-column consolidation. Anchor column {anchor_col} had {anchor_data['height']} O symbols.{ema_condition}",
-                    is_first_occurrence=True
-                ))
-                pattern_state.alert_fired = True
-                return  # Only fire one AFT alert
+                    distance = latest_column - anchor_col
+                    alerts.append(AlertTrigger(
+                        column=column,
+                        price=price,
+                        alert_type=AlertType.SELL,
+                        pattern_type=PatternType.AFT_ANCHOR_BREAKDOWN_SELL,
+                        trigger_reason=f"🚨 AFT ANCHOR BREAKDOWN SELL: Price {price:.2f} breaks below anchor low {anchor_low:.2f} on column {distance} after anchor. Double Bottom + Anchor Break = AFT!{ema_condition}",
+                        is_first_occurrence=True
+                    ))
+                    pattern_state.alert_fired = True
 
     def _check_high_pole_ft_sell(self, data: Dict, column: int, price: float,
                                 current_index: int, alerts: List[AlertTrigger], latest_column: int, ema_20: float = None):
@@ -2023,7 +2329,7 @@ class PatternDetector:
         """
         Check for Tweezer Bullish pattern.
 
-        Pattern requirements:
+        Pattern requirements (from P&F Tweezer pattern documentation):
         1. Consolidation between two anchor columns forms the Tweezer pattern
         2. Second Anchor column should be bullish for the bullish tweezer pattern
         3. Maximum 6 columns between two anchor columns
@@ -2031,11 +2337,15 @@ class PatternDetector:
         5. A column breakout in any of the subsequent columns activates the tweezer and the count
         6. The bullish pattern gets negated when the bottom of the pattern gets broken
 
-        Pattern structure:
-        A = Bearish Anchor column (strong fall)
-        B = Base (consolidation between 2-8 columns)
-        C = Bullish Anchor column (strong rally)
-        D = Follow-through DTB (Double Top Breakout)
+        Pattern structure (from reference image):
+        A = Bearish Anchor column (strong fall) - 14+ O symbols
+        B = Base (consolidation between 2-6 columns) - horizontal movement
+        C = Bullish Anchor column (strong rally) - 14+ X symbols
+        C1 = Small base at top of C (horizontal consolidation at resistance)
+        D = Follow-through breakout - X breaks above C high (small base resistance)
+
+        The pattern triggers when price breaks above the high of the bullish anchor column (C),
+        not when it forms a double top pattern.
         """
         if len(data['symbols']) < 8:  # Need sufficient data for anchor + base + anchor + breakout
             return
@@ -2104,9 +2414,6 @@ class PatternDetector:
             return
 
         # Step 3: Validate base consolidation (horizontal movement)
-        base_high = bearish_anchor['low']  # Start from bearish anchor low
-        base_low = bullish_anchor['high']   # End at bullish anchor high
-
         # Get all prices in base area
         base_prices = []
         for i in range(len(data['symbols'])):
@@ -2119,67 +2426,45 @@ class PatternDetector:
 
             # Base should be relatively flat (within reasonable range)
             base_range = actual_base_high - actual_base_low
-            anchor_range = bearish_anchor['high'] - bullish_anchor['low']
+            anchor_range = bearish_anchor['high'] - bearish_anchor['low']
 
             # Base range should be smaller than anchor range (consolidation)
             # Allow more flexibility for horizontal consolidation patterns
-            if base_range >= anchor_range * 0.7:  # Base too wide (increased from 0.5 to 0.7)
+            if base_range >= anchor_range * 0.7:  # Base too wide
                 return
 
-        # Step 4: Check for Double Top Buy (DTB) pattern after bullish anchor
-        # Look for X columns after bullish anchor to form double top
-        x_columns_after_anchor = {}
-        for i in range(len(data['symbols'])):
-            if (data['symbols'][i] == 'X' and
-                data['x_coords'][i] > bullish_anchor['column'] and
-                data['x_coords'][i] <= latest_column):
-                col = data['x_coords'][i]
-                if col not in x_columns_after_anchor or data['y_coords'][i] > x_columns_after_anchor[col]:
-                    x_columns_after_anchor[col] = data['y_coords'][i]
+        # Step 4: Check for breakout above bullish anchor high (C1 small base)
+        # The resistance level is the high of the bullish anchor column
+        resistance_level = bullish_anchor['high']
 
-        if len(x_columns_after_anchor) < 2:  # Need at least 2 X columns for double top
-            return
-
-        # Get X column highs before current column for resistance calculation
-        x_column_highs_before_current = []
-        for col, high in x_columns_after_anchor.items():
-            if col < latest_column:
-                x_column_highs_before_current.append(high)
-
-        if len(x_column_highs_before_current) < 2:  # Need at least 2 previous X columns for double top
-            return
-
-        # Find the resistance level from previous X columns
-        resistance_level = max(x_column_highs_before_current)
-
-        # Count X columns at similar resistance level (within 0.5% tolerance) for double top
-        tolerance = resistance_level * 0.005
-        similar_highs = [h for h in x_column_highs_before_current if abs(h - resistance_level) <= tolerance]
-
-        if len(similar_highs) < 2:  # Need at least double top
-            return
+        # Pattern base (bottom) is the low of the bearish anchor
+        pattern_base = bearish_anchor['low']
 
         # Check if we haven't already fired this pattern alert
         pattern_state = self.pattern_states[PatternType.TWEEZER_BULLISH]
 
-        # Fire alert if current X breaks above the double top resistance (DTB follow-through)
+        # Fire alert if current X breaks above the bullish anchor high (follow-through breakout)
         if price > resistance_level and not pattern_state.alert_fired:
             alerts.append(AlertTrigger(
                 column=column,
                 price=price,
                 alert_type=AlertType.BUY,
                 pattern_type=PatternType.TWEEZER_BULLISH,
-                trigger_reason=f"🚨 TWEEZER BULLISH: Price {price:.2f} breaks above double top resistance {resistance_level:.2f}. Horizontal accumulation pattern between anchor columns confirmed with follow-through DTB.",
+                trigger_reason=f"🚨 TWEEZER BULLISH: Price {price:.2f} breaks above bullish anchor high {resistance_level:.2f}. Horizontal accumulation pattern (base at {pattern_base:.2f}) between anchor columns confirmed with follow-through breakout.",
                 is_first_occurrence=True
             ))
             pattern_state.alert_fired = True
+
+        # Negate pattern if price breaks below the pattern base (bearish anchor low)
+        elif price < pattern_base and pattern_state.alert_fired:
+            pattern_state.alert_fired = False  # Reset for potential future patterns
 
     def _check_tweezer_bearish(self, data: Dict, column: int, price: float,
                               current_index: int, alerts: List[AlertTrigger], latest_column: int, ema_20: float = None):
         """
         Check for Tweezer Bearish pattern.
 
-        Pattern requirements:
+        Pattern requirements (from P&F Tweezer pattern documentation):
         1. Consolidation between two anchor columns forms the Tweezer pattern
         2. Second Anchor column should be bearish for the bearish tweezer pattern
         3. Maximum 6 columns between two anchor columns
@@ -2187,11 +2472,15 @@ class PatternDetector:
         5. A column breakout in any of the subsequent columns activates the tweezer and the count
         6. The bearish pattern gets negated when the top of the pattern gets broken
 
-        Pattern structure:
-        A = Bullish Anchor column (strong rally)
-        B = Base (consolidation between 2-8 columns)
-        C = Bearish Anchor column (strong fall)
-        D = Follow-through DBB (Double Bottom Breakdown)
+        Pattern structure (from reference image):
+        A = Bullish Anchor column (strong rally) - 14+ X symbols
+        B = Base (consolidation between 2-6 columns) - horizontal movement
+        C = Bearish Anchor column (strong fall) - 14+ O symbols
+        C1 = Small base at bottom of C (horizontal consolidation at support)
+        D = Follow-through breakdown - O breaks below C low (small base support)
+
+        The pattern triggers when price breaks below the low of the bearish anchor column (C),
+        not when it forms a double bottom pattern.
         """
         if len(data['symbols']) < 8:  # Need sufficient data for anchor + base + anchor + breakdown
             return
@@ -2260,9 +2549,6 @@ class PatternDetector:
             return
 
         # Step 3: Validate base consolidation (horizontal movement)
-        base_high = bullish_anchor['high']  # Start from bullish anchor high
-        base_low = bearish_anchor['low']    # End at bearish anchor low
-
         # Get all prices in base area
         base_prices = []
         for i in range(len(data['symbols'])):
@@ -2275,60 +2561,38 @@ class PatternDetector:
 
             # Base should be relatively flat (within reasonable range)
             base_range = actual_base_high - actual_base_low
-            anchor_range = bullish_anchor['high'] - bearish_anchor['low']
+            anchor_range = bullish_anchor['high'] - bullish_anchor['low']
 
             # Base range should be smaller than anchor range (consolidation)
             # Allow more flexibility for horizontal consolidation patterns
-            if base_range >= anchor_range * 0.7:  # Base too wide (increased from 0.5 to 0.7)
+            if base_range >= anchor_range * 0.7:  # Base too wide
                 return
 
-        # Step 4: Check for Double Bottom Sell (DBB) pattern after bearish anchor
-        # Look for O columns after bearish anchor to form double bottom
-        o_columns_after_anchor = {}
-        for i in range(len(data['symbols'])):
-            if (data['symbols'][i] == 'O' and
-                data['x_coords'][i] > bearish_anchor['column'] and
-                data['x_coords'][i] <= latest_column):
-                col = data['x_coords'][i]
-                if col not in o_columns_after_anchor or data['y_coords'][i] < o_columns_after_anchor[col]:
-                    o_columns_after_anchor[col] = data['y_coords'][i]
+        # Step 4: Check for breakdown below bearish anchor low (C1 small base)
+        # The support level is the low of the bearish anchor column
+        support_level = bearish_anchor['low']
 
-        if len(o_columns_after_anchor) < 2:  # Need at least 2 O columns for double bottom
-            return
-
-        # Get O column lows before current column for support calculation
-        o_column_lows_before_current = []
-        for col, low in o_columns_after_anchor.items():
-            if col < latest_column:
-                o_column_lows_before_current.append(low)
-
-        if len(o_column_lows_before_current) < 2:  # Need at least 2 previous O columns for double bottom
-            return
-
-        # Find the support level from previous O columns
-        support_level = min(o_column_lows_before_current)
-
-        # Count O columns at similar support level (within 0.5% tolerance) for double bottom
-        tolerance = support_level * 0.005
-        similar_lows = [l for l in o_column_lows_before_current if abs(l - support_level) <= tolerance]
-
-        if len(similar_lows) < 2:  # Need at least double bottom
-            return
+        # Pattern top is the high of the bullish anchor
+        pattern_top = bullish_anchor['high']
 
         # Check if we haven't already fired this pattern alert
         pattern_state = self.pattern_states[PatternType.TWEEZER_BEARISH]
 
-        # Fire alert if current O breaks below the double bottom support (DBB follow-through)
+        # Fire alert if current O breaks below the bearish anchor low (follow-through breakdown)
         if price < support_level and not pattern_state.alert_fired:
             alerts.append(AlertTrigger(
                 column=column,
                 price=price,
                 alert_type=AlertType.SELL,
                 pattern_type=PatternType.TWEEZER_BEARISH,
-                trigger_reason=f"🚨 TWEEZER BEARISH: Price {price:.2f} breaks below double bottom support {support_level:.2f}. Horizontal distribution pattern between anchor columns confirmed with follow-through DBB.",
+                trigger_reason=f"🚨 TWEEZER BEARISH: Price {price:.2f} breaks below bearish anchor low {support_level:.2f}. Horizontal distribution pattern (top at {pattern_top:.2f}) between anchor columns confirmed with follow-through breakdown.",
                 is_first_occurrence=True
             ))
             pattern_state.alert_fired = True
+
+        # Negate pattern if price breaks above the pattern top (bullish anchor high)
+        elif price > pattern_top and pattern_state.alert_fired:
+            pattern_state.alert_fired = False  # Reset for potential future patterns
 
     def _check_abc_bullish(self, data: Dict, column: int, price: float,
                           current_index: int, alerts: List[AlertTrigger], latest_column: int, ema_20: float = None):
@@ -2384,8 +2648,8 @@ class PatternDetector:
 
         # For each subsequent column, calculate the 45-degree trendline level
         # Bearish trendline: y = anchor_high - (column_distance * box_size)
-        # Using 1% box size as mentioned in documentation
-        box_size = anchor_high * 0.01  # 1% box size
+        # Use actual box_percentage from P&F calculation
+        box_size = anchor_high * self.box_percentage
 
         current_col_distance = latest_column - anchor_col
         trendline_level = anchor_high - (current_col_distance * box_size)
@@ -2491,8 +2755,8 @@ class PatternDetector:
 
         # For each subsequent column, calculate the 45-degree trendline level
         # Bullish trendline: y = anchor_low + (column_distance * box_size)
-        # Using 1% box size as mentioned in documentation
-        box_size = anchor_low * 0.01  # 1% box size
+        # Use actual box_percentage from P&F calculation
+        box_size = anchor_low * self.box_percentage
 
         current_col_distance = latest_column - anchor_col
         trendline_level = anchor_low + (current_col_distance * box_size)

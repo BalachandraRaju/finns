@@ -170,8 +170,8 @@ def check_pnf_alerts_for_stock(symbol: str, instrument_key: str) -> StockAlertRe
         # Use enhanced pattern detection
         from app.pattern_detector import PatternDetector
         detector = PatternDetector()
-        
-        alert_triggers = detector.analyze_pattern_formation(x_coords, y_coords, pnf_symbols, closes)
+
+        alert_triggers = detector.analyze_pattern_formation(x_coords, y_coords, pnf_symbols, closes, box_percentage)
         
         # Calculate Fibonacci levels for this symbol
         fib_data = detector._calculate_fibonacci_levels(highs, lows)
