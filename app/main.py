@@ -1,7 +1,7 @@
 import os
 import asyncio
 from datetime import timedelta
-from fastapi import FastAPI, Request, APIRouter, Form, Depends, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Request, APIRouter, Form, Depends, HTTPException, BackgroundTasks, Header
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -590,6 +590,85 @@ async def add_to_watchlist(
         "added_stocks": added_stocks
     }
 
+@api_router.post("/watchlist/add-stocks-json")
+async def add_stocks_to_watchlist_json(
+    request_data: dict,
+    background_tasks: BackgroundTasks,
+):
+    """
+    Add stocks to the main UI watchlist (Redis-based) using JSON format.
+    This endpoint makes stocks appear on the main watchlist page.
+
+    Example:
+    {
+        "stocks": ["RELIANCE", "TCS", "BAJFINANCE"],
+        "trade_type": "LONG",  # Optional, defaults to "Bullish"
+        "tags": "large-cap,momentum"  # Optional
+    }
+    """
+    try:
+        stocks = request_data.get("stocks", [])
+        trade_type = request_data.get("trade_type", "Bullish")
+        tags = request_data.get("tags", "API Added")
+
+        if not stocks:
+            raise HTTPException(status_code=400, detail="No stocks provided")
+
+        added_stocks = []
+        failed_stocks = []
+
+        for symbol in stocks:
+            symbol = symbol.upper().strip()
+
+            # Find stock info by symbol
+            stock_info = next((s for s in crud.STOCKS_LIST if s['symbol'] == symbol), None)
+
+            if not stock_info:
+                failed_stocks.append({"symbol": symbol, "reason": "Stock not found in universe"})
+                continue
+
+            # Check if already in watchlist
+            existing_watchlist = crud.get_watchlist_details()
+            if any(ws.symbol == symbol for ws in existing_watchlist):
+                failed_stocks.append({"symbol": symbol, "reason": "Already in watchlist"})
+                continue
+
+            stock_request = models.AddStockRequest(
+                instrument_key=stock_info['instrument_key'],
+                symbol=symbol,
+                trade_type=trade_type,
+                tags=tags,
+                target_price=None,
+                stoploss=None
+            )
+
+            crud.add_stock_to_watchlist(stock_request)
+            added_stocks.append(symbol)
+
+            # Initialize status for this stock
+            data_population_status[stock_info['instrument_key']] = {
+                "status": "queued",
+                "symbol": symbol,
+                "message": f"Queued for data population: {symbol}",
+                "progress": 0
+            }
+
+            # Queue background task for data population
+            background_tasks.add_task(populate_stock_data_background, stock_info['instrument_key'], symbol)
+
+        return {
+            "status": "success",
+            "added": added_stocks,
+            "failed": failed_stocks,
+            "total_added": len(added_stocks),
+            "total_failed": len(failed_stocks),
+            "message": f"Successfully added {len(added_stocks)} stocks to watchlist. Data population running in background."
+        }
+
+    except Exception as e:
+        logger.error(f"Error adding stocks to watchlist: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @api_router.get("/settings")
 async def get_settings():
     return crud.get_settings()
@@ -786,6 +865,11 @@ async def pattern_validation_page(request: Request):
 async def alert_verification_page(request: Request):
     """Alert verification page for detailed pattern analysis."""
     return templates.TemplateResponse("alert_verification.html", {"request": request, "user": {"email": "test@example.com"}})
+
+@app.get("/oi-dashboard", response_class=HTMLResponse)
+async def oi_dashboard_page(request: Request):
+    """Open Interest (OI) alert dashboard page."""
+    return templates.TemplateResponse("oi_dashboard.html", {"request": request, "user": {"email": "test@example.com"}})
 
 @api_router.post("/pnf-matrix")
 async def calculate_pnf_matrix(request: Request):
@@ -1527,7 +1611,7 @@ async def export_alerts_csv(
         logger.error(f"Error exporting alerts: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-app.include_router(api_router)
+# Router will be included at the end of the file
 
 # ============================================================================
 # BACKTESTING ROUTES
@@ -1767,6 +1851,665 @@ async def scan_bearish_fibonacci_patterns(current_user: User = Depends(get_curre
         logger.error(f"❌ Error in bearish Fibonacci scanner: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ============================================================================
+# OPEN INTEREST (OI) ALERT API ROUTES
+# ============================================================================
+
+@api_router.get("/oi-alerts")
+async def get_oi_alerts(
+    symbol: Optional[str] = None,
+    pattern_type: Optional[str] = None,
+    severity: Optional[str] = None,
+    hours: Optional[int] = 24,
+    limit: Optional[int] = 50
+):
+    """Get Open Interest based trading alerts."""
+    try:
+        from app.oi_real_alert_service import real_oi_service
+
+        # Get recent OI alerts from real Dhan API data
+        alerts = real_oi_service.get_recent_oi_alerts(
+            hours=hours,
+            symbol=symbol,
+            pattern_type=pattern_type,
+            severity=severity,
+            limit=limit
+        )
+
+        return {
+            "status": "success",
+            "alerts": alerts,
+            "total_count": len(alerts),
+            "filters_applied": {
+                "symbol": symbol,
+                "pattern_type": pattern_type,
+                "severity": severity,
+                "hours": hours
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching OI alerts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/oi-alerts/generate")
+async def generate_oi_alerts(
+    symbols: Optional[List[str]] = None
+):
+    """Manually trigger OI alert generation."""
+    try:
+        from app.oi_real_alert_service import real_oi_service
+
+        # Use provided symbols or default monitored symbols
+        target_symbols = symbols or ["NIFTY", "BANKNIFTY", "FINNIFTY"]
+
+        logger.info(f"🚀 Manual REAL OI alert generation requested for: {target_symbols}")
+
+        # Generate and store alerts using real Dhan API data
+        result = real_oi_service.generate_and_store_alerts(target_symbols)
+
+        return {
+            "status": result["status"],
+            "message": f"Generated {result['alerts_stored']} OI alerts",
+            "alerts_generated": result["alerts_generated"],
+            "alerts_stored": result["alerts_stored"],
+            "symbols_analyzed": result.get("symbols_analyzed", target_symbols)
+        }
+
+    except Exception as e:
+        logger.error(f"Error generating OI alerts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/oi-data/option-chain/{symbol}")
+async def get_option_chain_data(
+    symbol: str,
+    expiry_date: Optional[str] = None
+):
+    """Get current option chain data for a symbol using real Dhan API."""
+    try:
+        import sys
+        import os
+        sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'data-fetch'))
+        from dhan_oi_client import dhan_oi_client
+
+        logger.info(f"📊 Fetching REAL option chain data for {symbol} from Dhan API")
+
+        # Get option chain data from Dhan API
+        option_chain = dhan_oi_client.get_option_chain(symbol.upper(), expiry_date)
+
+        if not option_chain:
+            raise HTTPException(status_code=404, detail=f"No option chain data found for {symbol}")
+
+        # Convert to dict for JSON response
+        chain_dict = {
+            "symbol": option_chain.symbol,
+            "spot_price": option_chain.spot_price,
+            "timestamp": option_chain.timestamp.isoformat(),
+            "expiry_date": option_chain.expiry_date.isoformat(),
+            "call_strikes": option_chain.call_strikes,
+            "call_oi": option_chain.call_oi,
+            "call_volume": option_chain.call_volume,
+            "call_ltp": option_chain.call_ltp,
+            "put_strikes": option_chain.put_strikes,
+            "put_oi": option_chain.put_oi,
+            "put_volume": option_chain.put_volume,
+            "put_ltp": option_chain.put_ltp,
+            "total_call_oi": option_chain.total_call_oi,
+            "total_put_oi": option_chain.total_put_oi,
+            "pcr_oi": option_chain.pcr_oi,
+            "pcr_volume": option_chain.pcr_volume,
+            "max_pain": option_chain.max_pain,
+            "data_source": "DHAN_API"
+        }
+
+        return {
+            "status": "success",
+            "option_chain": chain_dict,
+            "data_source": "DHAN_API"
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching real option chain data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/oi-data/historical/{symbol}")
+async def get_historical_oi_data(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    strike_price: Optional[float] = None,
+    option_type: Optional[str] = None,
+    current_user: User = Depends(get_current_user_from_session)
+):
+    """Get historical OI data for analysis."""
+    try:
+        from app.oi_database_service import oi_database_service
+        from app.oi_models import OptionType
+        from datetime import datetime
+
+        # Parse dates
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d').date()
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d').date()
+
+        # Parse option type
+        opt_type = None
+        if option_type:
+            opt_type = OptionType.CALL if option_type.upper() == "CE" else OptionType.PUT
+
+        # Get historical data
+        historical_data = oi_database_service.get_historical_oi_data(
+            symbol=symbol.upper(),
+            start_date=start_dt,
+            end_date=end_dt,
+            strike_price=strike_price,
+            option_type=opt_type
+        )
+
+        # Convert to dict for JSON response
+        data_dicts = []
+        for data in historical_data:
+            data_dict = {
+                "symbol": data.symbol,
+                "strike_price": data.strike_price,
+                "option_type": data.option_type.value,
+                "expiry_date": data.expiry_date.isoformat(),
+                "date": data.date.isoformat(),
+                "timestamp": data.timestamp.isoformat(),
+                "open_interest": data.open_interest,
+                "oi_change": data.oi_change,
+                "oi_change_percent": data.oi_change_percent,
+                "ltp": data.ltp,
+                "price_change": data.price_change,
+                "price_change_percent": data.price_change_percent,
+                "volume": data.volume,
+                "volume_change_percent": data.volume_change_percent,
+                "underlying_price": data.underlying_price,
+                "underlying_change_percent": data.underlying_change_percent
+            }
+            data_dicts.append(data_dict)
+
+        return {
+            "status": "success",
+            "historical_data": data_dicts,
+            "total_records": len(data_dicts),
+            "date_range": {
+                "start_date": start_date,
+                "end_date": end_date
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching historical OI data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/oi-analysis/historical")
+async def run_historical_oi_analysis(
+    request_data: dict
+):
+    """Run comprehensive historical OI analysis and learning."""
+    try:
+        from app.oi_historical_analyzer import historical_oi_analyzer
+
+        symbols = request_data.get("symbols")
+        days = request_data.get("days", 90)
+
+        logger.info(f"🚀 Starting historical OI analysis for {days} days")
+
+        # Run historical analysis
+        analysis_results = historical_oi_analyzer.fetch_and_analyze_historical_data(
+            symbols=symbols,
+            days=days
+        )
+
+        return {
+            "status": "success",
+            "message": "Historical OI analysis completed",
+            "analysis_results": analysis_results
+        }
+
+    except Exception as e:
+        logger.error(f"Error running historical OI analysis: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/oi-analysis/learned-patterns")
+async def get_learned_patterns(
+    symbol: Optional[str] = None,
+    min_confidence: Optional[float] = 70.0
+):
+    """Get learned patterns from historical analysis."""
+    try:
+        from app.oi_historical_analyzer import historical_oi_analyzer
+
+        patterns = historical_oi_analyzer.get_learned_patterns(symbol)
+
+        # Filter by confidence
+        if min_confidence:
+            patterns = [p for p in patterns if p.get("confidence_score", 0) >= min_confidence]
+
+        return {
+            "status": "success",
+            "patterns": patterns,
+            "total_patterns": len(patterns),
+            "symbol_filter": symbol,
+            "min_confidence": min_confidence
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting learned patterns: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/oi-alerts/intelligent/generate")
+async def generate_intelligent_oi_alerts(
+    request_data: dict = None
+):
+    """Generate intelligent OI alerts using machine learning."""
+    try:
+        from app.oi_intelligent_alert_service import intelligent_oi_service
+
+        symbols = request_data.get("symbols") if request_data else None
+
+        logger.info(f"🧠 Generating intelligent OI alerts")
+
+        # Generate intelligent alerts
+        result = intelligent_oi_service.generate_and_store_intelligent_alerts(symbols)
+
+        return {
+            "status": result["status"],
+            "message": f"Generated {result['alerts_stored']} intelligent alerts",
+            "alerts_generated": result["alerts_generated"],
+            "alerts_stored": result["alerts_stored"],
+            "symbols_analyzed": result["symbols_analyzed"],
+            "avg_intelligence_score": result.get("avg_intelligence_score", 0),
+            "data_source": result["data_source"]
+        }
+
+    except Exception as e:
+        logger.error(f"Error generating intelligent OI alerts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/oi-alerts/intelligent")
+async def get_intelligent_oi_alerts(
+    symbol: Optional[str] = None,
+    hours: Optional[int] = 24,
+    min_intelligence_score: Optional[float] = 70.0,
+    limit: Optional[int] = 50
+):
+    """Get intelligent OI alerts with ML insights."""
+    try:
+        from app.oi_intelligent_alert_service import intelligent_oi_service
+
+        # Get intelligent alerts
+        alerts = intelligent_oi_service.get_recent_intelligent_alerts(
+            hours=hours,
+            symbol=symbol,
+            min_intelligence_score=min_intelligence_score,
+            limit=limit
+        )
+
+        return {
+            "status": "success",
+            "alerts": alerts,
+            "total_count": len(alerts),
+            "filters_applied": {
+                "symbol": symbol,
+                "hours": hours,
+                "min_intelligence_score": min_intelligence_score
+            },
+            "data_source": "INTELLIGENT_ML"
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching intelligent OI alerts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/ml/train")
+async def train_ml_models(
+    request_data: dict = None
+):
+    """Train ML models using 5-year expired options data."""
+    try:
+        from app.oi_ml_trainer import oi_ml_trainer
+
+        years = request_data.get("years", 5) if request_data else 5
+
+        logger.info(f"🤖 Starting ML model training with {years} years of data")
+
+        # Fetch and prepare training data
+        data_results = oi_ml_trainer.fetch_and_prepare_training_data(years=years)
+
+        if "error" in data_results:
+            return {
+                "status": "error",
+                "message": f"Data preparation failed: {data_results['error']}"
+            }
+
+        # Train ML models
+        training_results = oi_ml_trainer.train_ml_models()
+
+        if "error" in training_results:
+            return {
+                "status": "error",
+                "message": f"Model training failed: {training_results['error']}"
+            }
+
+        return {
+            "status": "success",
+            "message": "ML models trained successfully",
+            "data_preparation": data_results,
+            "training_results": training_results
+        }
+
+    except Exception as e:
+        logger.error(f"Error training ML models: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/ml/predict")
+async def predict_trading_signals(
+    request_data: dict
+):
+    """Predict trading signals using trained ML models."""
+    try:
+        from app.oi_ml_trainer import oi_ml_trainer
+
+        symbol = request_data.get("symbol")
+        current_data = request_data.get("current_data", {})
+
+        if not symbol:
+            raise HTTPException(status_code=400, detail="Symbol is required")
+
+        logger.info(f"🎯 Predicting trading signals for {symbol}")
+
+        # Make predictions
+        predictions = oi_ml_trainer.predict_trading_signals(symbol, current_data)
+
+        if "error" in predictions:
+            return {
+                "status": "error",
+                "message": predictions["error"]
+            }
+
+        return {
+            "status": "success",
+            "predictions": predictions
+        }
+
+    except Exception as e:
+        logger.error(f"Error predicting trading signals: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/ml/models")
+async def get_ml_models():
+    """Get information about trained ML models."""
+    try:
+        from app.oi_ml_trainer import oi_ml_trainer
+
+        # Get model information from database
+        cursor = oi_ml_trainer.db[oi_ml_trainer.models_collection].find()
+        models = []
+
+        for model_doc in cursor:
+            models.append({
+                "model_name": model_doc["model_name"],
+                "model_type": model_doc["model_type"],
+                "created_at": model_doc["created_at"].isoformat(),
+                "version": model_doc["version"]
+            })
+
+        return {
+            "status": "success",
+            "models": models,
+            "total_models": len(models)
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting ML models: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================================================
+# WATCHLIST API ENDPOINTS
+# ============================================================================
+
+# Default API token for watchlist access
+DEFAULT_API_TOKEN = "finns_watchlist_2025_secure_token"
+
+def verify_api_token(token: str = Header(None, alias="X-API-Token")):
+    """Verify API token for watchlist access."""
+    if token != DEFAULT_API_TOKEN:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API token. Use X-API-Token header with correct token."
+        )
+    return token
+
+@api_router.post("/watchlist/create")
+async def create_watchlist(
+    request_data: dict,
+    token: str = Depends(verify_api_token)
+):
+    """Create a new watchlist."""
+    try:
+        from app.watchlist_service import watchlist_service
+        from app.watchlist_models import WatchlistCreateRequest
+
+        user_id = request_data.get("user_id", "default_user")
+
+        # Parse request
+        create_request = WatchlistCreateRequest(**request_data)
+
+        # Create watchlist
+        result = watchlist_service.create_watchlist(user_id, create_request)
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Error creating watchlist: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/watchlist/list")
+async def get_watchlists(
+    user_id: str = "default_user",
+    include_public: bool = True,
+    token: str = Depends(verify_api_token)
+):
+    """Get all watchlists for a user."""
+    try:
+        from app.watchlist_service import watchlist_service
+
+        result = watchlist_service.get_watchlists(user_id, include_public)
+        return result
+
+    except Exception as e:
+        logger.error(f"Error getting watchlists: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/watchlist/{watchlist_id}")
+async def get_watchlist(
+    watchlist_id: str,
+    user_id: str = "default_user",
+    trade_types: Optional[str] = None,
+    tags: Optional[str] = None,
+    sectors: Optional[str] = None,
+    has_alerts: Optional[bool] = None,
+    min_confidence: Optional[float] = None,
+    token: str = Depends(verify_api_token)
+):
+    """Get a specific watchlist with optional filtering."""
+    try:
+        from app.watchlist_service import watchlist_service
+        from app.watchlist_models import WatchlistFilter, TradeType, AlertSeverity
+
+        # Parse filters
+        filters = None
+        if any([trade_types, tags, sectors, has_alerts, min_confidence]):
+            filters = WatchlistFilter()
+
+            if trade_types:
+                filters.trade_types = [TradeType(tt.strip()) for tt in trade_types.split(",")]
+
+            if tags:
+                filters.tags = [tag.strip() for tag in tags.split(",")]
+
+            if sectors:
+                filters.sectors = [sector.strip() for sector in sectors.split(",")]
+
+            if has_alerts is not None:
+                filters.has_alerts = has_alerts
+
+            if min_confidence is not None:
+                filters.min_confidence = min_confidence
+
+        result = watchlist_service.get_watchlist(user_id, watchlist_id, filters)
+        return result
+
+    except Exception as e:
+        logger.error(f"Error getting watchlist: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/watchlist/{watchlist_id}/add-stock")
+async def add_stock_to_watchlist(
+    watchlist_id: str,
+    request_data: dict,
+    token: str = Depends(verify_api_token)
+):
+    """Add a stock to watchlist."""
+    try:
+        from app.watchlist_service import watchlist_service
+        from app.watchlist_models import StockAddRequest
+
+        user_id = request_data.get("user_id", "default_user")
+
+        # Parse request
+        add_request = StockAddRequest(**request_data)
+
+        result = watchlist_service.add_stock_to_watchlist(user_id, watchlist_id, add_request)
+        return result
+
+    except Exception as e:
+        logger.error(f"Error adding stock to watchlist: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.delete("/watchlist/{watchlist_id}/remove-stock/{symbol}")
+async def remove_stock_from_watchlist(
+    watchlist_id: str,
+    symbol: str,
+    user_id: str = "default_user",
+    token: str = Depends(verify_api_token)
+):
+    """Remove a stock from watchlist."""
+    try:
+        from app.watchlist_service import watchlist_service
+
+        result = watchlist_service.remove_stock_from_watchlist(user_id, watchlist_id, symbol)
+        return result
+
+    except Exception as e:
+        logger.error(f"Error removing stock from watchlist: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.put("/watchlist/{watchlist_id}/update-stock/{symbol}")
+async def update_stock_in_watchlist(
+    watchlist_id: str,
+    symbol: str,
+    request_data: dict,
+    token: str = Depends(verify_api_token)
+):
+    """Update a stock in watchlist."""
+    try:
+        from app.watchlist_service import watchlist_service
+        from app.watchlist_models import StockUpdateRequest
+
+        user_id = request_data.get("user_id", "default_user")
+
+        # Parse request
+        update_request = StockUpdateRequest(**request_data)
+
+        result = watchlist_service.update_stock_in_watchlist(user_id, watchlist_id, symbol, update_request)
+        return result
+
+    except Exception as e:
+        logger.error(f"Error updating stock in watchlist: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/watchlist/stocks/filter")
+async def get_filtered_stocks(
+    user_id: str = "default_user",
+    trade_types: Optional[str] = None,
+    tags: Optional[str] = None,
+    sectors: Optional[str] = None,
+    has_alerts: Optional[bool] = None,
+    min_confidence: Optional[float] = None,
+    priority: Optional[str] = None,
+    limit: int = 100,
+    token: str = Depends(verify_api_token)
+):
+    """Get stocks across all watchlists with filters."""
+    try:
+        from app.watchlist_service import watchlist_service
+        from app.watchlist_models import WatchlistFilter, TradeType, AlertSeverity
+
+        # Parse filters
+        filters = WatchlistFilter()
+
+        if trade_types:
+            filters.trade_types = [TradeType(tt.strip()) for tt in trade_types.split(",")]
+
+        if tags:
+            filters.tags = [tag.strip() for tag in tags.split(",")]
+
+        if sectors:
+            filters.sectors = [sector.strip() for sector in sectors.split(",")]
+
+        if has_alerts is not None:
+            filters.has_alerts = has_alerts
+
+        if min_confidence is not None:
+            filters.min_confidence = min_confidence
+
+        if priority:
+            filters.priority = [int(p.strip()) for p in priority.split(",")]
+
+        result = watchlist_service.get_stocks_by_filters(user_id, filters, limit)
+        return result
+
+    except Exception as e:
+        logger.error(f"Error getting filtered stocks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/watchlist/stocks/with-alerts")
+async def get_stocks_with_alerts(
+    user_id: str = "default_user",
+    min_confidence: float = 70.0,
+    severity: Optional[str] = None,
+    limit: int = 50,
+    token: str = Depends(verify_api_token)
+):
+    """Get stocks with active alerts."""
+    try:
+        from app.watchlist_service import watchlist_service
+        from app.watchlist_models import WatchlistFilter, AlertSeverity
+
+        filters = WatchlistFilter(
+            has_alerts=True,
+            min_confidence=min_confidence
+        )
+
+        if severity:
+            filters.alert_severity = [AlertSeverity(sev.strip()) for sev in severity.split(",")]
+
+        result = watchlist_service.get_stocks_by_filters(user_id, filters, limit)
+        return result
+
+    except Exception as e:
+        logger.error(f"Error getting stocks with alerts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================================================
+# INCLUDE API ROUTER
+# ============================================================================
+
+# Include all API routes
+app.include_router(api_router)
 
 # ============================================================================
 # STARTUP EVENT
